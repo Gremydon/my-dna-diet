@@ -416,8 +416,8 @@ function cleanOCRText(text) {
     .replace(/[\n\r\t]+/g, ', ')
     // Normalize whitespace
     .replace(/\s+/g, ' ')
-    // Remove common OCR artifacts and unwanted characters
-    .replace(/[^\w\s,.-()]/g, '')
+    // Remove common OCR artifacts and unwanted characters (less aggressive)
+    .replace(/[^\w\s,.-()&]/g, '')
     // Remove single characters that are likely OCR errors
     .replace(/\b[a-z]\b/g, '')
     // Remove multiple commas
