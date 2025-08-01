@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pet Food Intolerances</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 🔐 Firebase Auth UI -->
+  <div id="auth-screen" style="padding: 20px; border: 1px solid #ccc; margin-bottom: 20px;">
+    <h2>Login to My DNA Diet</h2>
+    <input type="email" id="login-email" placeholder="Email"><br>
+    <input type="password" id="login-password" placeholder="Password"><br>
+    <button onclick="handleSignIn()">Login</button>
+    <hr>
+    <h2>Sign Up</h2>
+    <input type="email" id="signup-email" placeholder="Email"><br>
+    <input type="password" id="signup-password" placeholder="Password"><br>
+    <button onclick="handleSignUp()">Sign Up</button>
+    <p id="auth-message" style="color: red;"></p>
+  </div>
+
+  <div id="app-content" style="display: none;">
+    <div style="text-align: right; margin-bottom: 20px;">
+      <button onclick="handleSignOut()">Logout</button>
+    </div>
+    <div class="header">
+      <h1 id="name"></h1>
+      <div class="pet-selector">
+        <button class="pet-button active" data-pet="mocha">🐶 Mocha</button>
+        <button class="pet-button" data-pet="punkin">🐶 Punkin</button>
+      </div>
+    </div>
+
+    <div class="content">
+      <div id="content"></div>
+
+      <div class="scanner-section">
+        <h2>Ingredient Scanner</h2>
+        <p style="color: #666; margin-bottom: 15px;">
+          Enter ingredients to scan against the currently selected pet's intolerances.
+        </p>
+        <label for="ingredients">Enter Ingredients (comma-separated):</label><br>
+        <textarea id="ingredients" rows="3" cols="50" placeholder="e.g., Chicken, Corn Gluten Meal, Beef, Carrots"></textarea><br><br>
+
+        <button onclick="handleScan()">Scan Ingredients</button>
+
+        <div id="results" style="margin-top: 20px; font-weight: bold;"></div>
+      </div>
+
+      <div class="comparison-section">
+        <h2>Comparison Dashboard</h2>
+        <div class="chart-container">
+          <div class="chart">
+            <h3 class="chart-title">Intolerances by Category</h3>
+            <canvas id="categoryChart"></canvas>
+          </div>
+          <div class="chart">
+            <h3 class="chart-title">Intolerances by Level</h3>
+            <canvas id="levelChart"></canvas>
+          </div>
+          <div class="chart">
+            <h3 class="chart-title">Level 3 Intolerances by Category</h3>
+            <canvas id="level3Chart"></canvas>
+          </div>
+          <div class="chart">
+            <h3 class="chart-title">Category Distribution (%)</h3>
+            <canvas id="pieChart"></canvas>
+          </div>
+          <div class="chart full-width">
+            <h3 class="chart-title">Sensitivity Radar Chart</h3>
+            <canvas id="radarChart"></canvas>
+          </div>
+        </div>
+        <div class="comparison-grid">
+          <div class="comparison-box">
+            <h3>Shared Intolerances</h3>
+            <div id="sharedList" class="intolerance-list"></div>
+          </div>
+          <div class="comparison-box">
+            <h3>Mocha's Unique Intolerances</h3>
+            <div id="mochaUniqueList" class="intolerance-list"></div>
+          </div>
+          <div class="comparison-box">
+            <h3>Punkin's Unique Intolerances</h3>
+            <div id="punkinUniqueList" class="intolerance-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+
+  <script type="module">
+    // Import Firebase functions
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-auth.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-analytics.js";
+
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyAKmdmisEF2gwF5ml-O4ekqC3Z9mJHJboI",
+      authDomain: "my-dna-diet.firebaseapp.com",
+      projectId: "my-dna-diet",
+      storageBucket: "my-dna-diet.firebasestorage.app",
+      messagingSenderId: "926809907771",
+      appId: "1:926809907771:web:edffc26f9061274427b21e",
+      measurementId: "G-TCBGR6DTNE"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const auth = getAuth(app);
+
+    // Grab DOM elements
+    const authScreen = document.getElementById('auth-screen');
+    const appContent = document.getElementById('app-content');
+    const authMessage = document.getElementById('auth-message');
+
+    // Watch for login/logout state
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        authScreen.style.display = "none";
+        appContent.style.display = "block";
+      } else {
+        authScreen.style.display = "block";
+        appContent.style.display = "none";
+      }
+    });
+
+    // Handle Login
+    window.handleSignIn = async () => {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        authMessage.textContent = `Login failed: ${error.message}`;
+      }
+    };
+
+    // Handle Sign Up
+    window.handleSignUp = async () => {
+      const email = document.getElementById('signup-email').value;
+      const password = document.getElementById('signup-password').value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        authMessage.textContent = `Signup failed: ${error.message}`;
+      }
+    };
+
+    // Handle Logout
+    window.handleSignOut = async () => {
+      try {
+        await signOut(auth);
+      } catch (error) {
+        console.error(error.message);
+      }
+    };
+  </script>
+</body>
+</html>
