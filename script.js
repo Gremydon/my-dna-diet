@@ -10,31 +10,43 @@ const firebaseConfig = {
   measurementId: "G-TCBGR6DTNE"
 };
 
-console.log("🔥 Initializing Firebase...");
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-console.log("✅ Firebase initialized, auth object:", auth);
+// Global auth variable
+let auth = null;
 
-// Auth State Listener
-console.log("👂 Setting up auth state listener...");
-auth.onAuthStateChanged((user) => {
-  console.log("🔄 Auth state changed:", user ? "Logged in as " + user.email : "Not logged in");
-  if (user) {
-    console.log("✅ Showing app content");
-    document.getElementById("loginSection").style.display = "none";
-    document.getElementById("app-content").style.display = "block";
-    selectPet("Mocha"); // default pet on login
-  } else {
-    console.log("❌ Showing login section");
-    document.getElementById("loginSection").style.display = "block";
-    document.getElementById("app-content").style.display = "none";
-  }
+// Wait for DOM to be ready
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("🔥 Initializing Firebase...");
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  console.log("✅ Firebase initialized, auth object:", auth);
+
+  // Auth State Listener
+  console.log("👂 Setting up auth state listener...");
+  auth.onAuthStateChanged((user) => {
+    console.log("🔄 Auth state changed:", user ? "Logged in as " + user.email : "Not logged in");
+    if (user) {
+      console.log("✅ Showing app content");
+      document.getElementById("loginSection").style.display = "none";
+      document.getElementById("app-content").style.display = "block";
+      selectPet("Mocha"); // default pet on login
+    } else {
+      console.log("❌ Showing login section");
+      document.getElementById("loginSection").style.display = "block";
+      document.getElementById("app-content").style.display = "none";
+    }
+  });
 });
 
 // Login Function
 function login() {
   console.log("⚠️ Testing login click...");
   console.log("🔍 Firebase auth object:", auth);
+  
+  if (!auth) {
+    console.log("❌ Auth not initialized yet");
+    document.getElementById("loginError").textContent = "Please wait, authentication is initializing...";
+    return;
+  }
   
   const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
