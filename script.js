@@ -163,9 +163,9 @@ function closeScanModal() {
 function setupScannerEventListeners() {
   // Setup event listeners for the new modal structure
   document.getElementById("startCamera").addEventListener("click", () => startCamera(currentFacingMode));
-  document.getElementById("flipCamera").addEventListener("click", () => {
+  document.getElementById("flipCameraBtn").addEventListener("click", () => {
     currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
-    startCamera(currentFacingMode);
+    startCamera(); // This should restart the camera with new mode
   });
   document.getElementById("capturePhoto").addEventListener("click", captureImage);
   document.getElementById("retakePhoto").addEventListener("click", retakePhoto);
