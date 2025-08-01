@@ -143,45 +143,60 @@ function getUniqueIntolerances(petName) {
 
 // ===== SCANNER MODULE =====
 let videoStream = null;
-let currentCamera = 'environment'; // 'environment' for rear, 'user' for front
+let currentFacingMode = "environment"; // 'environment' for rear, 'user' for front
 let isProcessing = false;
 let capturedImageBlob = null; // Store captured image for preview
 
 // Scanner Modal Management
 function openScanModal() {
-  document.getElementById("scanModal").style.display = "flex";
+  document.getElementById("scannerModule").style.display = "flex";
   resetScannerUI();
+  setupScannerEventListeners();
 }
 
 function closeScanModal() {
   stopCamera();
-  document.getElementById("scanModal").style.display = "none";
+  document.getElementById("scannerModule").style.display = "none";
   resetScannerUI();
 }
 
+function setupScannerEventListeners() {
+  // Setup event listeners for the new modal structure
+  document.getElementById("startCamera").addEventListener("click", () => startCamera(currentFacingMode));
+  document.getElementById("flipCamera").addEventListener("click", () => {
+    currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+    startCamera(currentFacingMode);
+  });
+  document.getElementById("capturePhoto").addEventListener("click", captureImage);
+  document.getElementById("retakePhoto").addEventListener("click", retakePhoto);
+  document.getElementById("processPhoto").addEventListener("click", processCapturedImage);
+  document.getElementById("fileInput").addEventListener("change", uploadImage);
+  document.getElementById("closeScanner").addEventListener("click", closeScanModal);
+}
+
 function resetScannerUI() {
-  document.getElementById("processingStatus").style.display = "none";
-  document.getElementById("scanError").style.display = "none";
-  document.getElementById("captureBtn").style.display = "none";
-  document.getElementById("retakeBtn").style.display = "none";
-  document.getElementById("processBtn").style.display = "none";
-  document.getElementById("switchCameraBtn").style.display = "none";
-  document.getElementById("startCameraBtn").style.display = "inline-block";
+  document.getElementById("scanStatus").innerHTML = "";
+  document.getElementById("capturePhoto").style.display = "none";
+  document.getElementById("retakePhoto").style.display = "none";
+  document.getElementById("processPhoto").style.display = "none";
+  document.getElementById("startCamera").style.display = "inline-block";
   document.getElementById("fileInput").value = "";
-  document.getElementById("cameraFeed").style.display = "block";
+  document.getElementById("video").style.display = "block";
+  document.getElementById("canvas").style.display = "none";
   document.getElementById("photoPreview").style.display = "none";
   isProcessing = false;
   capturedImageBlob = null;
 }
 
 // Camera Management
-function startCamera() {
+function startCamera(facingMode = currentFacingMode) {
   if (isProcessing) return;
   
-  const video = document.getElementById("cameraFeed");
+  currentFacingMode = facingMode;
+  const video = document.getElementById("video");
   const constraints = {
     video: {
-      facingMode: { exact: currentCamera },
+      facingMode: { exact: facingMode },
       width: { ideal: 1920 },
       height: { ideal: 1080 }
     }
@@ -211,17 +226,8 @@ function startCamera() {
 }
 
 function showCameraControls() {
-  document.getElementById("startCameraBtn").style.display = "none";
-  document.getElementById("captureBtn").style.display = "inline-block";
-  document.getElementById("switchCameraBtn").style.display = "inline-block";
-}
-
-function switchCamera() {
-  if (isProcessing) return;
-  
-  stopCamera();
-  currentCamera = currentCamera === 'environment' ? 'user' : 'environment';
-  startCamera();
+  document.getElementById("startCamera").style.display = "none";
+  document.getElementById("capturePhoto").style.display = "inline-block";
 }
 
 function stopCamera() {
@@ -229,20 +235,20 @@ function stopCamera() {
     videoStream.getTracks().forEach(track => track.stop());
     videoStream = null;
   }
-  document.getElementById("cameraFeed").srcObject = null;
+  document.getElementById("video").srcObject = null;
 }
 
 // Image Capture and Processing
 function captureImage() {
   if (isProcessing) return;
   
-  const video = document.getElementById("cameraFeed");
+  const video = document.getElementById("video");
   if (!video.srcObject) {
     showError("Camera not started. Please start camera first.");
     return;
   }
 
-  const canvas = document.createElement("canvas");
+  const canvas = document.getElementById("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
   
@@ -259,7 +265,7 @@ function captureImage() {
 }
 
 function showPhotoPreview(canvas) {
-  const video = document.getElementById("cameraFeed");
+  const video = document.getElementById("video");
   const preview = document.getElementById("photoPreview");
   
   // Hide video, show preview
@@ -276,13 +282,13 @@ function showPhotoPreview(canvas) {
   ctx.drawImage(canvas, 0, 0, preview.width, preview.height);
   
   // Show retake and process buttons
-  document.getElementById("captureBtn").style.display = "none";
-  document.getElementById("retakeBtn").style.display = "inline-block";
-  document.getElementById("processBtn").style.display = "inline-block";
+  document.getElementById("capturePhoto").style.display = "none";
+  document.getElementById("retakePhoto").style.display = "inline-block";
+  document.getElementById("processPhoto").style.display = "inline-block";
 }
 
 function retakePhoto() {
-  const video = document.getElementById("cameraFeed");
+  const video = document.getElementById("video");
   const preview = document.getElementById("photoPreview");
   
   // Show video, hide preview
@@ -290,9 +296,9 @@ function retakePhoto() {
   preview.style.display = "none";
   
   // Show capture button, hide retake/process
-  document.getElementById("captureBtn").style.display = "inline-block";
-  document.getElementById("retakeBtn").style.display = "none";
-  document.getElementById("processBtn").style.display = "none";
+  document.getElementById("capturePhoto").style.display = "inline-block";
+  document.getElementById("retakePhoto").style.display = "none";
+  document.getElementById("processPhoto").style.display = "none";
   
   capturedImageBlob = null;
 }
@@ -423,26 +429,25 @@ function cleanOCRText(text) {
 }
 
 function showProcessingStatus() {
-  document.getElementById("processingStatus").style.display = "block";
+  document.getElementById("scanStatus").innerHTML = `<div style="color: #4b0082; font-weight: bold;">🔄 Processing image...</div><div style="font-size: 12px; color: #666;">This may take a few seconds</div>`;
 }
 
 function hideProcessingStatus() {
-  document.getElementById("processingStatus").style.display = "none";
+  document.getElementById("scanStatus").innerHTML = "";
 }
 
 function updateProcessingStatus(message) {
-  const statusDiv = document.getElementById("processingStatus");
+  const statusDiv = document.getElementById("scanStatus");
   statusDiv.innerHTML = `<div style="color: #4b0082; font-weight: bold;">🔄 ${message}</div>`;
 }
 
 function showError(message) {
-  const errorDiv = document.getElementById("scanError");
-  errorDiv.textContent = message;
-  errorDiv.style.display = "block";
+  const statusDiv = document.getElementById("scanStatus");
+  statusDiv.innerHTML = `<div style="color: red; margin: 10px 0; padding: 10px; background-color: #ffe6e6; border-radius: 8px;">${message}</div>`;
 }
 
 function hideError() {
-  document.getElementById("scanError").style.display = "none";
+  document.getElementById("scanStatus").innerHTML = "";
 }
 
 function scanIngredients(text) {

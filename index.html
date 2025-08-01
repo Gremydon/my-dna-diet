@@ -220,40 +220,22 @@
     </div>
 
     <!-- Scan Modal -->
-    <div id="scanModal" class="modal" style="display: none;">
+    <div id="scannerModule" class="modal" style="display: none;">
       <div class="modal-content">
-        <h2>📸 Food Label Scanner</h2>
-        <p style="color: #666; margin-bottom: 15px;">Scan food labels to check for intolerances</p>
-        
-        <!-- Camera Section -->
-        <div id="cameraSection">
-          <video id="cameraFeed" width="100%" autoplay muted playsinline style="border-radius: 8px; margin-bottom: 10px;"></video>
-          <canvas id="photoPreview" width="100%" style="border-radius: 8px; margin-bottom: 10px; display: none;"></canvas>
-          <div id="cameraControls" style="margin-bottom: 15px;">
-            <button id="startCameraBtn" onclick="startCamera()" style="background-color: #28a745;">📷 Start Camera</button>
-            <button id="captureBtn" onclick="captureImage()" style="background-color: #007bff; display: none;">📸 Capture</button>
-            <button id="retakeBtn" onclick="retakePhoto()" style="background-color: #ffc107; display: none;">🔄 Retake</button>
-            <button id="processBtn" onclick="processCapturedImage()" style="background-color: #28a745; display: none;">✅ Process Photo</button>
-            <button id="switchCameraBtn" onclick="switchCamera()" style="background-color: #6c757d; display: none;">🔄 Switch Camera</button>
-          </div>
+        <h2>📸 Scan Food Label</h2>
+        <video id="video" autoplay muted playsinline style="width: 100%; border-radius: 8px; margin-bottom: 10px;"></video>
+        <canvas id="canvas" style="width: 100%; border-radius: 8px; margin-bottom: 10px; display: none;"></canvas>
+        <img id="photoPreview" style="width: 100%; border-radius: 8px; margin-bottom: 10px; display: none;" alt="Preview">
+        <div class="scanner-buttons" style="margin-bottom: 15px;">
+          <button id="startCamera" style="background-color: #28a745; margin: 5px;">📷 Start Camera</button>
+          <button id="flipCamera" style="background-color: #6c757d; margin: 5px;">🔄 Flip Camera</button>
+          <button id="capturePhoto" style="background-color: #007bff; margin: 5px; display: none;">📸 Capture Photo</button>
+          <button id="retakePhoto" style="background-color: #ffc107; margin: 5px; display: none;">🔄 Retake</button>
+          <button id="processPhoto" style="background-color: #28a745; margin: 5px; display: none;">✅ Process Photo</button>
+          <input type="file" id="fileInput" accept="image/*" style="margin: 5px; padding: 8px; border: 2px dashed #ccc; border-radius: 8px;">
+          <button id="closeScanner" style="background-color: #dc3545; margin: 5px;">❌ Close</button>
         </div>
-        
-        <!-- File Upload Section -->
-        <div id="uploadSection" style="margin-bottom: 15px;">
-          <p style="color: #666; font-size: 14px;">Or upload an image:</p>
-          <input type="file" id="fileInput" accept="image/*" onchange="uploadImage(event)" style="width: 100%; padding: 8px; border: 2px dashed #ccc; border-radius: 8px;" />
-        </div>
-        
-        <!-- Processing Status -->
-        <div id="processingStatus" style="display: none; text-align: center; padding: 10px;">
-          <div style="color: #4b0082; font-weight: bold;">🔄 Processing image...</div>
-          <div style="font-size: 12px; color: #666;">This may take a few seconds</div>
-        </div>
-        
-        <!-- Error Display -->
-        <div id="scanError" style="display: none; color: red; margin: 10px 0; padding: 10px; background-color: #ffe6e6; border-radius: 8px;"></div>
-        
-        <button onclick="closeScanModal()" style="background-color: #dc3545;">❌ Close</button>
+        <div id="scanStatus" style="text-align: center; padding: 10px;"></div>
       </div>
     </div>
 
