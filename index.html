@@ -222,13 +222,35 @@
     <!-- Scan Modal -->
     <div id="scanModal" class="modal" style="display: none;">
       <div class="modal-content">
-        <h2>Scan Food Label</h2>
-        <video id="cameraFeed" width="100%" autoplay muted playsinline></video>
-        <br />
-        <button onclick="startCamera()">Start Camera</button>
-        <button onclick="captureImage()">Capture Photo</button>
-        <input type="file" accept="image/*" onchange="uploadImage(event)" />
-        <button onclick="closeScanModal()">Close</button>
+        <h2>📸 Food Label Scanner</h2>
+        <p style="color: #666; margin-bottom: 15px;">Scan food labels to check for intolerances</p>
+        
+        <!-- Camera Section -->
+        <div id="cameraSection">
+          <video id="cameraFeed" width="100%" autoplay muted playsinline style="border-radius: 8px; margin-bottom: 10px;"></video>
+          <div id="cameraControls" style="margin-bottom: 15px;">
+            <button id="startCameraBtn" onclick="startCamera()" style="background-color: #28a745;">📷 Start Camera</button>
+            <button id="captureBtn" onclick="captureImage()" style="background-color: #007bff; display: none;">📸 Capture</button>
+            <button id="switchCameraBtn" onclick="switchCamera()" style="background-color: #6c757d; display: none;">🔄 Switch Camera</button>
+          </div>
+        </div>
+        
+        <!-- File Upload Section -->
+        <div id="uploadSection" style="margin-bottom: 15px;">
+          <p style="color: #666; font-size: 14px;">Or upload an image:</p>
+          <input type="file" id="fileInput" accept="image/*" onchange="uploadImage(event)" style="width: 100%; padding: 8px; border: 2px dashed #ccc; border-radius: 8px;" />
+        </div>
+        
+        <!-- Processing Status -->
+        <div id="processingStatus" style="display: none; text-align: center; padding: 10px;">
+          <div style="color: #4b0082; font-weight: bold;">🔄 Processing image...</div>
+          <div style="font-size: 12px; color: #666;">This may take a few seconds</div>
+        </div>
+        
+        <!-- Error Display -->
+        <div id="scanError" style="display: none; color: red; margin: 10px 0; padding: 10px; background-color: #ffe6e6; border-radius: 8px;"></div>
+        
+        <button onclick="closeScanModal()" style="background-color: #dc3545;">❌ Close</button>
       </div>
     </div>
 
