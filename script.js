@@ -1,307 +1,247 @@
-// JavaScript file for Pet Food Intolerances application
-// This file contains all the application logic
+// Initialize Firebase
+const firebaseConfig = {
+  apiKey: "AIzaSyAKmdmisEF2gwF5ml-O4ekqC3Z9mJHJboI",
+  authDomain: "my-dna-diet.firebaseapp.com",
+  databaseURL: "https://my-dna-diet.firebaseio.com",
+  projectId: "my-dna-diet",
+  storageBucket: "my-dna-diet.firebasestorage.app",
+  messagingSenderId: "926809907771",
+  appId: "1:926809907771:web:edffc26f9061274427b21e",
+  measurementId: "G-TCBGR6DTNE"
+};
 
-let petData = {};
-let currentPet = 'mocha';
+console.log("🔥 Initializing Firebase...");
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+console.log("✅ Firebase initialized, auth object:", auth);
 
-async function loadAllPetData() {
-  try {
-    const petFiles = ['mocha', 'punkin', 'don', 'lora'];
-    const fetches = petFiles.map(name => fetch(`${name}-data.json`));
-    const results = await Promise.all(fetches);
-
-    for (let i = 0; i < petFiles.length; i++) {
-      petData[petFiles[i]] = await results[i].json();
-    }
-
-    console.log('All data loaded:', petData);
-    populatePetSelector(petFiles);
-    updateUI(currentPet);
-  } catch (error) {
-    console.error('Failed to load pet data:', error);
+// Auth State Listener
+console.log("👂 Setting up auth state listener...");
+auth.onAuthStateChanged((user) => {
+  console.log("🔄 Auth state changed:", user ? "Logged in as " + user.email : "Not logged in");
+  if (user) {
+    console.log("✅ Showing app content");
+    document.getElementById("loginSection").style.display = "none";
+    document.getElementById("app-content").style.display = "block";
+    selectPet("Mocha"); // default pet on login
+  } else {
+    console.log("❌ Showing login section");
+    document.getElementById("loginSection").style.display = "block";
+    document.getElementById("app-content").style.display = "none";
   }
-}
+});
 
-function populatePetSelector(pets) {
-  const selector = document.querySelector('.pet-selector');
-  if (!selector) return;
+// Login Function
+function login() {
+  console.log("⚠️ Testing login click...");
+  console.log("🔍 Firebase auth object:", auth);
   
-  selector.innerHTML = '';
-  pets.forEach(pet => {
-    const button = document.createElement('button');
-    button.className = 'pet-button';
-    button.dataset.pet = pet;
-    button.textContent = `🐶 ${pet.charAt(0).toUpperCase() + pet.slice(1)}`;
-    button.onclick = () => {
-      currentPet = pet;
-      updateUI(currentPet);
-      // Update active button
-      document.querySelectorAll('.pet-button').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.pet === pet);
-      });
-    };
-    selector.appendChild(button);
-  });
-
-  // Set initial active state
-  document.querySelectorAll('.pet-button').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.pet === currentPet);
-  });
-}
-
-function updateUI(pet) {
-  const data = petData[pet];
-  if (!data) return;
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
   
-  document.getElementById('name').textContent = data.name + "'s Intolerances";
-  const content = document.getElementById('content');
-  content.innerHTML = '';
-  
-  const categories = {};
-  data.intolerances.forEach(item => {
-    if (!categories[item.category]) {
-      categories[item.category] = [];
-    }
-    categories[item.category].push(item);
-  });
+  console.log("📧 Email:", email);
+  console.log("🔑 Password length:", password.length);
 
-  for (const [category, items] of Object.entries(categories)) {
-    const catDiv = document.createElement('div');
-    catDiv.className = 'category-card';
-    const catTitle = document.createElement('h2');
-    catTitle.textContent = category;
-    catDiv.appendChild(catTitle);
-    items.forEach(item => {
-      const p = document.createElement('p');
-      p.className = 'intolerance-item level-' + item.level;
-      p.textContent = `${item.item} (Level ${item.level})`;
-      catDiv.appendChild(p);
+  if (!email || !password) {
+    console.log("❌ Missing email or password");
+    document.getElementById("loginError").textContent = "Please enter both email and password";
+    return;
+  }
+
+  console.log("🚀 Attempting Firebase login...");
+  
+  auth.signInWithEmailAndPassword(email, password)
+    .then((userCredential) => {
+      console.log("✅ Login successful:", userCredential.user.email);
+      document.getElementById("loginError").textContent = "";
+    })
+    .catch((error) => {
+      console.log("❌ Login failed:", error.message);
+      document.getElementById("loginError").textContent = error.message;
     });
-    content.appendChild(catDiv);
-  }
-
-  // Update comparison charts
-  updateComparison();
 }
 
-// Update comparison charts and lists
-function updateComparison() {
-  const pets = Object.keys(petData);
-  if (pets.length < 2) return;
+let currentPet = "Mocha";
 
-  // Prepare data for charts
-  const categories = [...new Set(
-    pets.flatMap(pet => petData[pet].intolerances.map(i => i.category))
-  )];
+// Select Pet Function
+function selectPet(petName) {
+  currentPet = petName;
 
-  // Category Chart
-  const categoryData = {
-    labels: categories,
-    datasets: pets.map((pet, index) => ({
-      label: pet.charAt(0).toUpperCase() + pet.slice(1),
-      data: categories.map(cat => 
-        petData[pet].intolerances.filter(i => i.category === cat).length
-      ),
-      backgroundColor: `hsla(${index * 90}, 70%, 50%, 0.5)`,
-      borderColor: `hsla(${index * 90}, 70%, 50%, 1)`,
-      borderWidth: 1
-    }))
-  };
-
-  // Level Chart
-  const levelData = {
-    labels: ['Level 1', 'Level 2', 'Level 3'],
-    datasets: pets.map((pet, index) => ({
-      label: pet.charAt(0).toUpperCase() + pet.slice(1),
-      data: [1, 2, 3].map(level => 
-        petData[pet].intolerances.filter(i => i.level === level).length
-      ),
-      backgroundColor: `hsla(${index * 90}, 70%, 50%, 0.5)`,
-      borderColor: `hsla(${index * 90}, 70%, 50%, 1)`,
-      borderWidth: 1
-    }))
-  };
-
-  // Level 3 Chart
-  const level3Categories = [...new Set(
-    pets.flatMap(pet => 
-      petData[pet].intolerances
-        .filter(i => i.level === 3)
-        .map(i => i.category)
-    )
-  )];
-
-  const level3Data = {
-    labels: level3Categories,
-    datasets: pets.map((pet, index) => ({
-      label: pet.charAt(0).toUpperCase() + pet.slice(1),
-      data: level3Categories.map(cat => 
-        petData[pet].intolerances.filter(i => i.category === cat && i.level === 3).length
-      ),
-      backgroundColor: `hsla(${index * 90}, 70%, 50%, 0.5)`,
-      borderColor: `hsla(${index * 90}, 70%, 50%, 1)`,
-      borderWidth: 1
-    }))
-  };
-
-  // Pie Chart
-  const pieData = {
-    labels: pets.map(pet => pet.charAt(0).toUpperCase() + pet.slice(1)),
-    datasets: [{
-      data: pets.map(pet => petData[pet].intolerances.length),
-      backgroundColor: pets.map((pet, index) => `hsla(${index * 90}, 70%, 50%, 0.8)`),
-      borderColor: pets.map((pet, index) => `hsla(${index * 90}, 70%, 50%, 1)`),
-      borderWidth: 2
-    }]
-  };
-
-  // Radar Chart
-  const radarData = {
-    labels: categories,
-    datasets: pets.map((pet, index) => ({
-      label: pet.charAt(0).toUpperCase() + pet.slice(1),
-      data: categories.map(cat => 
-        petData[pet].intolerances.filter(i => i.category === cat).length
-      ),
-      backgroundColor: `hsla(${index * 90}, 70%, 50%, 0.2)`,
-      borderColor: `hsla(${index * 90}, 70%, 50%, 1)`,
-      borderWidth: 2,
-      pointBackgroundColor: `hsla(${index * 90}, 70%, 50%, 1)`,
-      pointBorderColor: '#fff',
-      pointHoverBackgroundColor: '#fff',
-      pointHoverBorderColor: `hsla(${index * 90}, 70%, 50%, 1)`
-    }))
-  };
-
-  // Update charts
-  updateChart('categoryChart', 'bar', categoryData);
-  updateChart('levelChart', 'bar', levelData);
-  updateChart('level3Chart', 'bar', level3Data);
-  updateChart('pieChart', 'pie', pieData);
-  updateChart('radarChart', 'radar', radarData);
-
-  // Update comparison lists
-  updateComparisonLists();
-}
-
-function updateChart(canvasId, type, data) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas) return;
-
-  const ctx = canvas.getContext('2d');
-  
-  // Destroy existing chart if it exists
-  if (window[canvasId + 'Chart']) {
-    window[canvasId + 'Chart'].destroy();
-  }
-
-  window[canvasId + 'Chart'] = new Chart(ctx, {
-    type: type,
-    data: data,
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: type === 'radar' ? {} : {
-        y: {
-          beginAtZero: true
-        }
-      }
+  const buttons = document.querySelectorAll(".pet-button");
+  buttons.forEach((btn) => {
+    btn.classList.remove("active");
+    if (btn.textContent.includes(petName)) {
+      btn.classList.add("active");
     }
   });
+
+  renderIntolerances();
 }
 
-function updateComparisonLists() {
-  const pets = Object.keys(petData);
-  if (pets.length < 2) return;
+// Render Intolerances Function
+function renderIntolerances() {
+  const shared = getSharedIntolerances();
+  const unique = getUniqueIntolerances(currentPet);
 
-  // Find shared intolerances
-  const allIntolerances = pets.map(pet => 
-    petData[pet].intolerances.map(i => i.item)
-  );
-  const shared = allIntolerances.reduce((acc, curr) => 
-    acc.filter(item => curr.includes(item))
-  );
+  const sharedList = document.getElementById("sharedList");
+  const uniqueList = document.getElementById("uniqueList");
 
-  // Find unique intolerances for each pet
-  const uniqueIntolerances = {};
-  pets.forEach(pet => {
-    const petItems = petData[pet].intolerances.map(i => i.item);
-    uniqueIntolerances[pet] = petItems.filter(item => 
-      !pets.filter(p => p !== pet).some(otherPet => 
-        petData[otherPet].intolerances.map(i => i.item).includes(item)
-      )
-    );
-  });
+  sharedList.innerHTML = "";
+  uniqueList.innerHTML = "";
 
-  // Update lists
-  updateList('sharedList', shared);
-  pets.forEach(pet => {
-    updateList(pet + 'UniqueList', uniqueIntolerances[pet]);
-  });
-}
-
-function updateList(listId, items) {
-  const list = document.getElementById(listId);
-  if (!list) return;
-
-  list.innerHTML = '';
-  items.forEach(item => {
-    const div = document.createElement('div');
-    div.className = 'intolerance-item';
+  shared.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "intolerance";
     div.textContent = item;
-    list.appendChild(div);
+    sharedList.appendChild(div);
+  });
+
+  unique.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "intolerance";
+    div.textContent = item;
+    uniqueList.appendChild(div);
   });
 }
 
-// Scanner functionality
-function scanIngredients(ingredients, petData) {
-  const ingredientList = ingredients.split(',').map(i => i.trim().toLowerCase());
-  const matches = [];
+// Static intolerance data for each profile (replace with dynamic later if needed)
+const intolerances = {
+  Don: ["Hydrochloric Acid", "Monosodium Citrate", "Whey Protein", "Sodium Benzoate"],
+  Lora: ["Monopotassium Phosphate", "Whisky", "Gluten", "FD&C Red 40"],
+  Mocha: ["Chicken Byproduct", "Corn", "Beef", "Soy"],
+  Punkin: ["Salmon", "Lamb", "Barley", "Peanut Butter"]
+};
 
-  petData.intolerances.forEach(intolerance => {
-    const intoleranceItem = intolerance.item.toLowerCase();
-    if (ingredientList.some(ingredient => 
-      intoleranceItem.includes(ingredient) || ingredient.includes(intoleranceItem)
-    )) {
-      matches.push(intolerance);
+// Get Shared Intolerances
+function getSharedIntolerances() {
+  const profiles = Object.keys(intolerances);
+  if (profiles.length === 0) return [];
+
+  return intolerances[profiles[0]].filter((item) =>
+    profiles.every((name) => intolerances[name].includes(item))
+  );
+}
+
+// Get Unique Intolerances for Current Pet
+function getUniqueIntolerances(petName) {
+  const shared = getSharedIntolerances();
+  const all = intolerances[petName] || [];
+  return all.filter((item) => !shared.includes(item));
+}
+
+let videoStream = null;
+
+function openScanModal() {
+  document.getElementById("scanModal").style.display = "flex";
+}
+
+function closeScanModal() {
+  if (videoStream) {
+    videoStream.getTracks().forEach(track => track.stop());
+  }
+  document.getElementById("cameraFeed").srcObject = null;
+  document.getElementById("scanModal").style.display = "none";
+}
+
+function startCamera() {
+  const video = document.getElementById("cameraFeed");
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then((stream) => {
+      videoStream = stream;
+      video.srcObject = stream;
+    })
+    .catch((err) => {
+      console.error("Camera error:", err);
+    });
+}
+
+function captureImage() {
+  const video = document.getElementById("cameraFeed");
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  canvas.toBlob((blob) => {
+    processImage(blob);
+  }, "image/png");
+}
+
+function uploadImage(event) {
+  const file = event.target.files[0];
+  if (file) {
+    processImage(file);
+  }
+}
+
+function processImage(imageBlob) {
+  Tesseract.recognize(
+    imageBlob,
+    'eng',
+    { logger: m => console.log(m) }
+  ).then(({ data: { text } }) => {
+    document.getElementById("ingredientInput").value = text;
+    scanIngredients(text);
+    closeScanModal();
+  }).catch((err) => {
+    console.error("OCR error:", err);
+    alert("Could not read image. Please try again.");
+    closeScanModal();
+  });
+}
+
+function scanIngredients(text) {
+  const resultsContainer = document.getElementById("scanResults");
+  resultsContainer.innerHTML = "";
+
+  const inputList = text.split(/[\s,.\n\r;:]+/).map(item => item.trim().toLowerCase());
+  const petList = intolerances[currentPet].map(item => item.toLowerCase());
+
+  inputList.forEach(word => {
+    if (word.length < 2) return; // skip junk
+
+    const div = document.createElement("div");
+    div.className = "intolerance";
+
+    if (petList.includes(word)) {
+      div.classList.add("level-3");
+      div.textContent = word + " (Level 3)";
+    } else {
+      div.textContent = word;
     }
+
+    resultsContainer.appendChild(div);
   });
-
-  return matches;
 }
 
-function handleScan() {
-  const ingredients = document.getElementById('ingredients').value;
-  const data = petData[currentPet];
-  
-  if (!data) {
-    document.getElementById('results').innerHTML = '<p style="color: red;">No pet data available</p>';
-    return;
-  }
-
-  const matches = scanIngredients(ingredients, data);
-  displayResults(matches, ingredients, data);
+function clearInput() {
+  document.getElementById("ingredientInput").value = "";
+  document.getElementById("scanResults").innerHTML = "";
 }
 
-function displayResults(matches, ingredients, petData) {
-  const resultsDiv = document.getElementById('results');
-  
-  if (matches.length === 0) {
-    resultsDiv.innerHTML = '<p style="color: green;">✅ No intolerances found! These ingredients should be safe for ' + petData.name + '.</p>';
-    return;
-  }
-
-  let html = '<p style="color: red;">⚠️ Found ' + matches.length + ' potential intolerance(s) for ' + petData.name + ':</p>';
-  html += '<ul>';
-  
-  matches.forEach(match => {
-    const levelColor = match.level === 3 ? 'red' : match.level === 2 ? 'orange' : 'yellow';
-    html += `<li style="color: ${levelColor}; font-weight: bold;">${match.item} (Level ${match.level} - ${match.category})</li>`;
-  });
-  
-  html += '</ul>';
-  resultsDiv.innerHTML = html;
+function exportCSV() {
+  const items = intolerances[currentPet];
+  const csvContent = "data:text/csv;charset=utf-8," + items.join("\n");
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement("a");
+  link.setAttribute("href", encodedUri);
+  link.setAttribute("download", currentPet + "_intolerances.csv");
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
-// Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', loadAllPetData); 
+function testFood() {
+  alert("Food testing is coming soon! 🚧 This feature is under construction.");
+}
+
+function viewDiet() {
+  alert("Diet recommendations coming soon! 🥦 This section is still in progress.");
+}
+
+function viewTerms() {
+  document.getElementById("termsModal").style.display = "flex";
+}
+
+function closeTermsModal() {
+  document.getElementById("termsModal").style.display = "none";
+} 
