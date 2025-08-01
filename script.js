@@ -165,7 +165,7 @@ function setupScannerEventListeners() {
   document.getElementById("startCamera").addEventListener("click", () => startCamera(currentFacingMode));
   document.getElementById("flipCameraBtn").addEventListener("click", () => {
     currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
-    startCamera(); // This should restart the camera with new mode
+    startCamera(currentFacingMode); // Pass the new facing mode
   });
   document.getElementById("capturePhoto").addEventListener("click", captureImage);
   document.getElementById("retakePhoto").addEventListener("click", retakePhoto);
