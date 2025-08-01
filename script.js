@@ -145,6 +145,7 @@ function getUniqueIntolerances(petName) {
 let videoStream = null;
 let currentCamera = 'environment'; // 'environment' for rear, 'user' for front
 let isProcessing = false;
+let capturedImageBlob = null; // Store captured image for preview
 
 // Scanner Modal Management
 function openScanModal() {
@@ -162,10 +163,15 @@ function resetScannerUI() {
   document.getElementById("processingStatus").style.display = "none";
   document.getElementById("scanError").style.display = "none";
   document.getElementById("captureBtn").style.display = "none";
+  document.getElementById("retakeBtn").style.display = "none";
+  document.getElementById("processBtn").style.display = "none";
   document.getElementById("switchCameraBtn").style.display = "none";
   document.getElementById("startCameraBtn").style.display = "inline-block";
   document.getElementById("fileInput").value = "";
+  document.getElementById("cameraFeed").style.display = "block";
+  document.getElementById("photoPreview").style.display = "none";
   isProcessing = false;
+  capturedImageBlob = null;
 }
 
 // Camera Management
@@ -243,9 +249,85 @@ function captureImage() {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, 0, 0);
   
-  canvas.toBlob((blob) => {
-    processImage(blob);
+  // Apply image enhancement for better OCR
+  const enhancedCanvas = enhanceImageForOCR(canvas);
+  
+  enhancedCanvas.toBlob((blob) => {
+    capturedImageBlob = blob;
+    showPhotoPreview(enhancedCanvas);
   }, "image/jpeg", 0.9);
+}
+
+function showPhotoPreview(canvas) {
+  const video = document.getElementById("cameraFeed");
+  const preview = document.getElementById("photoPreview");
+  
+  // Hide video, show preview
+  video.style.display = "none";
+  preview.style.display = "block";
+  
+  // Scale preview to fit modal
+  const modalWidth = preview.offsetWidth;
+  const scale = modalWidth / canvas.width;
+  preview.width = modalWidth;
+  preview.height = canvas.height * scale;
+  
+  const ctx = preview.getContext("2d");
+  ctx.drawImage(canvas, 0, 0, preview.width, preview.height);
+  
+  // Show retake and process buttons
+  document.getElementById("captureBtn").style.display = "none";
+  document.getElementById("retakeBtn").style.display = "inline-block";
+  document.getElementById("processBtn").style.display = "inline-block";
+}
+
+function retakePhoto() {
+  const video = document.getElementById("cameraFeed");
+  const preview = document.getElementById("photoPreview");
+  
+  // Show video, hide preview
+  video.style.display = "block";
+  preview.style.display = "none";
+  
+  // Show capture button, hide retake/process
+  document.getElementById("captureBtn").style.display = "inline-block";
+  document.getElementById("retakeBtn").style.display = "none";
+  document.getElementById("processBtn").style.display = "none";
+  
+  capturedImageBlob = null;
+}
+
+function processCapturedImage() {
+  if (capturedImageBlob) {
+    processImage(capturedImageBlob);
+  }
+}
+
+// Image Enhancement for Better OCR
+function enhanceImageForOCR(canvas) {
+  const ctx = canvas.getContext("2d");
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  
+  // Apply contrast enhancement
+  const contrast = 1.5; // Increase contrast
+  const brightness = 10; // Slight brightness boost
+  
+  for (let i = 0; i < data.length; i += 4) {
+    // Apply contrast and brightness to each color channel
+    data[i] = Math.min(255, Math.max(0, (data[i] - 128) * contrast + 128 + brightness));     // Red
+    data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - 128) * contrast + 128 + brightness)); // Green
+    data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - 128) * contrast + 128 + brightness)); // Blue
+  }
+  
+  // Create new canvas with enhanced image
+  const enhancedCanvas = document.createElement("canvas");
+  enhancedCanvas.width = canvas.width;
+  enhancedCanvas.height = canvas.height;
+  const enhancedCtx = enhancedCanvas.getContext("2d");
+  enhancedCtx.putImageData(imageData, 0, 0);
+  
+  return enhancedCanvas;
 }
 
 function uploadImage(event) {
@@ -293,14 +375,20 @@ function processImage(imageBlob) {
 
   Tesseract.recognize(imageBlob, tesseractConfig)
     .then(({ data: { text } }) => {
-      console.log("OCR Result:", text);
+      console.log("Raw OCR Result:", text);
       
-      if (!text || text.trim().length < 10) {
+      if (!text || text.trim().length < 5) {
         throw new Error("Could not read enough text from image. Please try a clearer photo.");
       }
       
-      // Clean up the text
+      // Clean up the text with improved filtering
       const cleanedText = cleanOCRText(text);
+      console.log("Cleaned OCR Result:", cleanedText);
+      
+      if (cleanedText.trim().length < 5) {
+        throw new Error("Text too short after cleaning. Please try a clearer photo.");
+      }
+      
       document.getElementById("ingredientInput").value = cleanedText;
       scanIngredients(cleanedText);
       closeScanModal();
@@ -316,9 +404,21 @@ function processImage(imageBlob) {
 // Text Processing Utilities
 function cleanOCRText(text) {
   return text
-    .replace(/\n+/g, ', ') // Replace newlines with commas
-    .replace(/\s+/g, ' ') // Normalize whitespace
-    .replace(/[^\w\s,.-]/g, '') // Remove special characters except common food label ones
+    // Convert to lowercase for better matching
+    .toLowerCase()
+    // Replace various line breaks and separators with commas
+    .replace(/[\n\r\t]+/g, ', ')
+    // Normalize whitespace
+    .replace(/\s+/g, ' ')
+    // Remove common OCR artifacts and unwanted characters
+    .replace(/[^\w\s,.-()]/g, '')
+    // Remove single characters that are likely OCR errors
+    .replace(/\b[a-z]\b/g, '')
+    // Remove multiple commas
+    .replace(/,+/g, ',')
+    // Remove leading/trailing commas and spaces
+    .replace(/^[,.\s]+|[,.\s]+$/g, '')
+    // Final trim
     .trim();
 }
 
@@ -354,46 +454,71 @@ function scanIngredients(text) {
     return;
   }
 
-  // Improved ingredient parsing for OCR results
+  // Improved ingredient parsing for OCR results (text is already lowercase)
   const inputList = text
     .split(/[,.\n\r;:()\[\]]+/) // Split on common separators
     .map(item => item.trim())
-    .filter(item => item.length > 1) // Remove single characters
-    .map(item => item.toLowerCase());
+    .filter(item => item.length > 2) // Remove very short items (likely OCR errors)
+    .filter(item => /^[a-z\s]+$/.test(item)); // Only allow letters and spaces
   
   const petList = intolerances[currentPet].map(item => item.toLowerCase());
   const foundIntolerances = [];
   const otherIngredients = [];
 
+  // Limit results to prevent UI overflow
+  const maxResults = 50;
+  let resultCount = 0;
+
   inputList.forEach(word => {
-    if (word.length < 2) return; // skip junk
+    if (resultCount >= maxResults) return;
+    if (word.length < 3) return; // skip very short words
 
     const div = document.createElement("div");
     div.className = "intolerance";
+    div.style.cssText = "margin: 2px 0; padding: 4px 8px; border-radius: 4px; font-size: 14px;";
 
     if (petList.includes(word)) {
-      div.classList.add("level-3");
-      div.textContent = word + " (Level 3)";
+      div.style.backgroundColor = "#ffcccc";
+      div.style.color = "red";
+      div.style.fontWeight = "bold";
+      div.textContent = `⚠️ ${word} (Level 3)`;
       foundIntolerances.push(word);
     } else {
+      div.style.backgroundColor = "#f8f9fa";
+      div.style.color = "#666";
       div.textContent = word;
       otherIngredients.push(word);
     }
 
     resultsContainer.appendChild(div);
+    resultCount++;
   });
 
-  // Add summary
+  // Add summary with better layout
   if (foundIntolerances.length > 0) {
     const summaryDiv = document.createElement("div");
-    summaryDiv.style.cssText = "background-color: #ffcccc; color: red; padding: 10px; border-radius: 8px; margin-top: 10px; font-weight: bold;";
-    summaryDiv.textContent = `⚠️ Found ${foundIntolerances.length} intolerance(s): ${foundIntolerances.join(', ')}`;
+    summaryDiv.style.cssText = "background-color: #ffcccc; color: red; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #dc3545;";
+    summaryDiv.innerHTML = `
+      <div style="font-size: 16px; margin-bottom: 5px;">⚠️ Found ${foundIntolerances.length} intolerance(s)</div>
+      <div style="font-size: 14px; font-weight: normal;">${foundIntolerances.join(', ')}</div>
+    `;
     resultsContainer.insertBefore(summaryDiv, resultsContainer.firstChild);
   } else {
     const summaryDiv = document.createElement("div");
-    summaryDiv.style.cssText = "background-color: #d4edda; color: #155724; padding: 10px; border-radius: 8px; margin-top: 10px; font-weight: bold;";
-    summaryDiv.textContent = "✅ No intolerances found in scanned ingredients";
+    summaryDiv.style.cssText = "background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #28a745;";
+    summaryDiv.innerHTML = `
+      <div style="font-size: 16px; margin-bottom: 5px;">✅ No intolerances found</div>
+      <div style="font-size: 14px; font-weight: normal;">Scanned ${otherIngredients.length} ingredients</div>
+    `;
     resultsContainer.insertBefore(summaryDiv, resultsContainer.firstChild);
+  }
+
+  // Add overflow warning if needed
+  if (inputList.length > maxResults) {
+    const overflowDiv = document.createElement("div");
+    overflowDiv.style.cssText = "color: #666; font-size: 12px; text-align: center; padding: 10px; font-style: italic;";
+    overflowDiv.textContent = `Showing first ${maxResults} results (${inputList.length} total found)`;
+    resultsContainer.appendChild(overflowDiv);
   }
 }
 

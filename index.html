@@ -228,9 +228,12 @@
         <!-- Camera Section -->
         <div id="cameraSection">
           <video id="cameraFeed" width="100%" autoplay muted playsinline style="border-radius: 8px; margin-bottom: 10px;"></video>
+          <canvas id="photoPreview" width="100%" style="border-radius: 8px; margin-bottom: 10px; display: none;"></canvas>
           <div id="cameraControls" style="margin-bottom: 15px;">
             <button id="startCameraBtn" onclick="startCamera()" style="background-color: #28a745;">📷 Start Camera</button>
             <button id="captureBtn" onclick="captureImage()" style="background-color: #007bff; display: none;">📸 Capture</button>
+            <button id="retakeBtn" onclick="retakePhoto()" style="background-color: #ffc107; display: none;">🔄 Retake</button>
+            <button id="processBtn" onclick="processCapturedImage()" style="background-color: #28a745; display: none;">✅ Process Photo</button>
             <button id="switchCameraBtn" onclick="switchCamera()" style="background-color: #6c757d; display: none;">🔄 Switch Camera</button>
           </div>
         </div>
