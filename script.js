@@ -17,7 +17,7 @@ let auth = null;
 document.addEventListener('DOMContentLoaded', function() {
   console.log("🔥 Initializing Firebase...");
   firebase.initializeApp(firebaseConfig);
-  auth = firebase.auth();
+  const auth = firebase.auth();
   console.log("✅ Firebase initialized, auth object:", auth);
 
   // Auth State Listener
