@@ -515,7 +515,40 @@ function testFood() {
 }
 
 function viewDiet() {
-  alert("Diet recommendations coming soon! 🥦 This section is still in progress.");
+  const fileInput = document.getElementById("dietPlanUpload");
+  const resultDiv = document.getElementById("dietPlanResults");
+
+  const file = fileInput.files[0];
+  if (!file) {
+    resultDiv.innerHTML = "<p>Please select a text file first.</p>";
+    return;
+  }
+
+  // Lock in current profile immediately
+  const currentProfile = currentPet;
+  const intoleranceList = intolerances[currentProfile] || [];
+  const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
+
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const contents = e.target.result.toLowerCase();
+    const ingredients = contents.split(/[\n,]+/).map(line => line.trim()).filter(Boolean);
+
+    const flagged = ingredients.filter(ingredient =>
+      lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
+    );
+
+    if (flagged.length > 0) {
+      resultDiv.innerHTML = `
+        <p>⚠️ The following ingredients in the uploaded diet plan may be problematic for <strong>${currentProfile}</strong>:</p>
+        <ul>${flagged.map(i => `<li style="color: red;">${i}</li>`).join("")}</ul>
+      `;
+    } else {
+      resultDiv.innerHTML = `<p style="color: green;">✅ No known intolerances found for <strong>${currentProfile}</strong>.</p>`;
+    }
+  };
+
+  reader.readAsText(file);
 }
 
 function viewTerms() {
