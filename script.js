@@ -1,77 +1,15 @@
-// Initialize Firebase
-const firebaseConfig = {
-  apiKey: "AIzaSyAKmdmisEF2gwF5ml-O4ekqC3Z9mJHJboI",
-  authDomain: "my-dna-diet.firebaseapp.com",
-  databaseURL: "https://my-dna-diet.firebaseio.com",
-  projectId: "my-dna-diet",
-  storageBucket: "my-dna-diet.firebasestorage.app",
-  messagingSenderId: "926809907771",
-  appId: "1:926809907771:web:edffc26f9061274427b21e",
-  measurementId: "G-TCBGR6DTNE"
-};
-
-// Global auth variable
-let auth = null;
+// Firebase configuration removed - no authentication required
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', function() {
-  console.log("🔥 Initializing Firebase...");
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  console.log("✅ Firebase initialized, auth object:", auth);
-
-  // Auth State Listener
-  console.log("👂 Setting up auth state listener...");
-  auth.onAuthStateChanged((user) => {
-    console.log("🔄 Auth state changed:", user ? "Logged in as " + user.email : "Not logged in");
-    if (user) {
-      console.log("✅ Showing app content");
-      document.getElementById("loginSection").style.display = "none";
-      document.getElementById("app-content").style.display = "block";
-      selectPet("Mocha"); // default pet on login
-    } else {
-      console.log("❌ Showing login section");
-      document.getElementById("loginSection").style.display = "block";
-      document.getElementById("app-content").style.display = "none";
-    }
-  });
+  console.log("✅ App initialized - no authentication required");
+  // Show app content by default
+  document.getElementById("loginSection").style.display = "none";
+  document.getElementById("app-content").style.display = "block";
+  selectPet("Mocha"); // default pet
 });
 
-// Login Function
-function login() {
-  console.log("⚠️ Testing login click...");
-  console.log("🔍 Firebase auth object:", auth);
-  
-  if (!auth) {
-    console.log("❌ Auth not initialized yet");
-    document.getElementById("loginError").textContent = "Please wait, authentication is initializing...";
-    return;
-  }
-  
-  const email = document.getElementById("email").value;
-  const password = document.getElementById("password").value;
-  
-  console.log("📧 Email:", email);
-  console.log("🔑 Password length:", password.length);
-
-  if (!email || !password) {
-    console.log("❌ Missing email or password");
-    document.getElementById("loginError").textContent = "Please enter both email and password";
-    return;
-  }
-
-  console.log("🚀 Attempting Firebase login...");
-  
-  auth.signInWithEmailAndPassword(email, password)
-    .then((userCredential) => {
-      console.log("✅ Login successful:", userCredential.user.email);
-      document.getElementById("loginError").textContent = "";
-    })
-    .catch((error) => {
-      console.log("❌ Login failed:", error.message);
-      document.getElementById("loginError").textContent = error.message;
-    });
-}
+// Login function removed - no authentication required
 
 let currentPet = "Mocha";
 
