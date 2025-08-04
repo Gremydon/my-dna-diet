@@ -1,8 +1,12 @@
 // Firebase configuration removed - no authentication required
 
 // Wait for DOM to be ready
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   console.log("✅ App initialized - no authentication required");
+  
+  // Load intolerance data from JSON files
+  await loadIntoleranceData();
+  
   // App content is already visible by default
   selectPet("Mocha"); // default pet
 });
@@ -52,13 +56,46 @@ function renderIntolerances() {
   });
 }
 
-// Static intolerance data for each profile (replace with dynamic later if needed)
-const intolerances = {
-  Don: ["Hydrochloric Acid", "Monosodium Citrate", "Whey Protein", "Sodium Benzoate"],
-  Lora: ["Monopotassium Phosphate", "Whisky", "Gluten", "FD&C Red 40"],
-  Mocha: ["Chicken Byproduct", "Corn", "Beef", "Soy"],
-  Punkin: ["Salmon", "Lamb", "Barley", "Peanut Butter"]
+// Dynamic intolerance data loaded from JSON files
+let intolerances = {
+  Don: [],
+  Lora: [],
+  Mocha: [],
+  Punkin: []
 };
+
+// Load intolerance data from JSON files
+async function loadIntoleranceData() {
+  try {
+    const [donData, loraData, mochaData, punkinData] = await Promise.all([
+      fetch('don-data.json').then(res => res.json()),
+      fetch('lora-data.json').then(res => res.json()),
+      fetch('mocha-data.json').then(res => res.json()),
+      fetch('punkin-data.json').then(res => res.json())
+    ]);
+
+    // Extract item names from the intolerance arrays
+    intolerances.Don = donData.intolerances.map(item => item.item);
+    intolerances.Lora = loraData.intolerances.map(item => item.item);
+    intolerances.Mocha = mochaData.intolerances.map(item => item.item);
+    intolerances.Punkin = punkinData.intolerances.map(item => item.item);
+
+    console.log("✅ Intolerance data loaded successfully");
+    console.log("Don intolerances:", intolerances.Don.length, "items");
+    console.log("Lora intolerances:", intolerances.Lora.length, "items");
+    console.log("Mocha intolerances:", intolerances.Mocha.length, "items");
+    console.log("Punkin intolerances:", intolerances.Punkin.length, "items");
+  } catch (error) {
+    console.error("❌ Error loading intolerance data:", error);
+    // Fallback to static data if JSON loading fails
+    intolerances = {
+      Don: ["Hydrochloric Acid", "Monosodium Citrate", "Whey Protein", "Sodium Benzoate"],
+      Lora: ["Monopotassium Phosphate", "Whisky", "Gluten", "FD&C Red 40"],
+      Mocha: ["Chicken Byproduct", "Corn", "Beef", "Soy"],
+      Punkin: ["Salmon", "Lamb", "Barley", "Peanut Butter"]
+    };
+  }
+}
 
 // Get Shared Intolerances
 function getSharedIntolerances() {
