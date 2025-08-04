@@ -481,7 +481,84 @@ function exportCSV() {
 }
 
 function testFood() {
-  alert("Food testing is coming soon! 🚧 This feature is under construction.");
+  const testInput = document.getElementById("testFoodInput").value;
+  const resultsContainer = document.getElementById("testFoodResults");
+  
+  if (!testInput || testInput.trim().length === 0) {
+    resultsContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">Please enter ingredients to test</div>';
+    return;
+  }
+  
+  // Use the same analysis logic as scanIngredients but for the test food section
+  const text = testInput.toLowerCase();
+  const inputList = text
+    .split(/[,.\n\r;:()\[\]]+/) // Split on common separators
+    .map(item => item.trim())
+    .filter(item => item.length > 2) // Remove very short items
+    .filter(item => /^[a-z\s]+$/.test(item)); // Only allow letters and spaces
+  
+  const petList = intolerances[currentPet].map(item => item.toLowerCase());
+  const foundIntolerances = [];
+  const otherIngredients = [];
+
+  // Clear previous results
+  resultsContainer.innerHTML = "";
+
+  // Limit results to prevent UI overflow
+  const maxResults = 50;
+  let resultCount = 0;
+
+  inputList.forEach(word => {
+    if (resultCount >= maxResults) return;
+    if (word.length < 3) return; // skip very short words
+
+    const div = document.createElement("div");
+    div.className = "intolerance";
+    div.style.cssText = "margin: 2px 0; padding: 4px 8px; border-radius: 4px; font-size: 14px;";
+
+    if (petList.includes(word)) {
+      div.style.backgroundColor = "#ffcccc";
+      div.style.color = "red";
+      div.style.fontWeight = "bold";
+      div.textContent = `⚠️ ${word} (Level 3)`;
+      foundIntolerances.push(word);
+    } else {
+      div.style.backgroundColor = "#f8f9fa";
+      div.style.color = "#666";
+      div.textContent = word;
+      otherIngredients.push(word);
+    }
+
+    resultsContainer.appendChild(div);
+    resultCount++;
+  });
+
+  // Add summary with better layout
+  if (foundIntolerances.length > 0) {
+    const summaryDiv = document.createElement("div");
+    summaryDiv.style.cssText = "background-color: #ffcccc; color: red; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #dc3545;";
+    summaryDiv.innerHTML = `
+      <div style="font-size: 16px; margin-bottom: 5px;">⚠️ Found ${foundIntolerances.length} intolerance(s) for ${currentPet}</div>
+      <div style="font-size: 14px; font-weight: normal;">${foundIntolerances.join(', ')}</div>
+    `;
+    resultsContainer.insertBefore(summaryDiv, resultsContainer.firstChild);
+  } else {
+    const summaryDiv = document.createElement("div");
+    summaryDiv.style.cssText = "background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #28a745;";
+    summaryDiv.innerHTML = `
+      <div style="font-size: 16px; margin-bottom: 5px;">✅ No intolerances found for ${currentPet}</div>
+      <div style="font-size: 14px; font-weight: normal;">Analyzed ${otherIngredients.length} ingredients</div>
+    `;
+    resultsContainer.insertBefore(summaryDiv, resultsContainer.firstChild);
+  }
+
+  // Add overflow warning if needed
+  if (inputList.length > maxResults) {
+    const overflowDiv = document.createElement("div");
+    overflowDiv.style.cssText = "color: #666; font-size: 12px; text-align: center; padding: 10px; font-style: italic;";
+    overflowDiv.textContent = `Showing first ${maxResults} results (${inputList.length} total found)`;
+    resultsContainer.appendChild(overflowDiv);
+  }
 }
 
 function viewDiet() {
