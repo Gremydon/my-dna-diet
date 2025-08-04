@@ -3,9 +3,7 @@
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', function() {
   console.log("✅ App initialized - no authentication required");
-  // Show app content by default
-  document.getElementById("loginSection").style.display = "none";
-  document.getElementById("app-content").style.display = "block";
+  // App content is already visible by default
   selectPet("Mocha"); // default pet
 });
 
