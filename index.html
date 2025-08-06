@@ -168,6 +168,22 @@
     #app-content {
       display: block;
     }
+    
+    /* Scanner modal minimized state */
+    .modal-content.minimized {
+      max-width: 400px !important;
+      max-height: 60vh !important;
+    }
+    
+    .modal-content.minimized #scannerMainContent {
+      font-size: 0.9em;
+    }
+    
+    .modal-content.minimized video,
+    .modal-content.minimized canvas,
+    .modal-content.minimized img {
+      max-height: 200px !important;
+    }
   </style>
 </head>
 <body>
@@ -206,6 +222,13 @@
         <div id="testFoodResults"></div>
       </section>
 
+      <section id="diet-plan-section" class="section">
+        <h3>Upload a Diet Plan</h3>
+        <input type="file" id="dietPlanUpload" accept=".txt" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-family: inherit; margin-bottom: 10px;">
+        <button class="diet-btn" onclick="viewDiet()">Analyze Diet Plan</button>
+        <div id="dietPlanResults"></div>
+      </section>
+
       <div id="sharedIntolerances" class="section">
         <h3>Shared Intolerances</h3>
         <div id="sharedList"></div>
@@ -223,21 +246,34 @@
 
     <!-- Scan Modal -->
     <div id="scannerModule" class="modal" style="display: none;">
-      <div class="modal-content">
-        <h2>📸 Scan Food Label</h2>
-        <video id="video" autoplay muted playsinline style="width: 100%; border-radius: 8px; margin-bottom: 10px;"></video>
-        <canvas id="canvas" style="width: 100%; border-radius: 8px; margin-bottom: 10px; display: none;"></canvas>
-        <img id="photoPreview" style="width: 100%; border-radius: 8px; margin-bottom: 10px; display: none;" alt="Preview">
-        <div class="scanner-buttons" style="margin-bottom: 15px;">
-          <button id="startCamera" style="background-color: #28a745; margin: 5px;">📷 Start Camera</button>
-          <button id="flipCameraBtn" class="scanner-button" style="background-color: #6c757d; margin: 5px;">🔄 Flip Camera</button>
-          <button id="capturePhoto" style="background-color: #007bff; margin: 5px; display: none;">📸 Capture Photo</button>
-          <button id="retakePhoto" style="background-color: #ffc107; margin: 5px; display: none;">🔄 Retake</button>
-          <button id="processPhoto" style="background-color: #28a745; margin: 5px; display: none;">✅ Process Photo</button>
-          <input type="file" id="fileInput" accept="image/*" style="margin: 5px; padding: 8px; border: 2px dashed #ccc; border-radius: 8px;">
-          <button id="closeScanner" style="background-color: #dc3545; margin: 5px;">❌ Close</button>
+      <div class="modal-content" id="scannerModalContent" style="max-width: 600px; max-height: 80vh; overflow-y: auto; position: relative;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h2 style="margin: 0;">📸 Scan Food Label</h2>
+          <div>
+            <button id="minimizeScanner" style="background-color: #6c757d; color: white; border: none; border-radius: 4px; padding: 5px 10px; margin-right: 5px; cursor: pointer;">📱</button>
+            <button id="closeScanner" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer;">❌</button>
+          </div>
         </div>
-        <div id="scanStatus" style="text-align: center; padding: 10px;"></div>
+        
+        <div id="scannerMainContent">
+          <video id="video" autoplay muted playsinline style="width: 100%; max-height: 300px; border-radius: 8px; margin-bottom: 10px; object-fit: cover;"></video>
+          <canvas id="canvas" style="width: 100%; max-height: 300px; border-radius: 8px; margin-bottom: 10px; display: none; object-fit: cover;"></canvas>
+          <img id="photoPreview" style="width: 100%; max-height: 300px; border-radius: 8px; margin-bottom: 10px; display: none; object-fit: cover;" alt="Preview">
+          
+          <div class="scanner-buttons" style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 5px; justify-content: center;">
+            <button id="startCamera" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">📷 Start Camera</button>
+            <button id="flipCameraBtn" style="background-color: #6c757d; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">🔄 Flip Camera</button>
+            <button id="capturePhoto" style="background-color: #007bff; color: white; border: none; border-radius: 4px; padding: 8px 12px; display: none; cursor: pointer;">📸 Capture Photo</button>
+            <button id="retakePhoto" style="background-color: #ffc107; color: white; border: none; border-radius: 4px; padding: 8px 12px; display: none; cursor: pointer;">🔄 Retake</button>
+            <button id="processPhoto" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 12px; display: none; cursor: pointer;">✅ Process Photo</button>
+          </div>
+          
+          <div style="text-align: center; margin-bottom: 15px;">
+            <input type="file" id="fileInput" accept="image/*" style="padding: 8px; border: 2px dashed #ccc; border-radius: 8px; width: 100%; max-width: 300px;">
+          </div>
+          
+          <div id="scanStatus" style="text-align: center; padding: 10px; min-height: 20px;"></div>
+        </div>
       </div>
     </div>
 

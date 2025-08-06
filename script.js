@@ -133,6 +133,29 @@ function closeScanModal() {
   resetScannerUI();
 }
 
+// Toggle scanner size between normal and compact
+function toggleScannerSize() {
+  const modalContent = document.getElementById("scannerModalContent");
+  const minimizeBtn = document.getElementById("minimizeScanner");
+  const isMinimized = modalContent.classList.contains("minimized");
+  
+  if (isMinimized) {
+    // Expand to normal size
+    modalContent.classList.remove("minimized");
+    modalContent.style.maxWidth = "600px";
+    modalContent.style.maxHeight = "80vh";
+    minimizeBtn.textContent = "📱";
+    minimizeBtn.title = "Minimize";
+  } else {
+    // Minimize to compact size
+    modalContent.classList.add("minimized");
+    modalContent.style.maxWidth = "400px";
+    modalContent.style.maxHeight = "60vh";
+    minimizeBtn.textContent = "📺";
+    minimizeBtn.title = "Expand";
+  }
+}
+
 function setupScannerEventListeners() {
   // Setup event listeners for the new modal structure
   document.getElementById("startCamera").addEventListener("click", () => startCamera(currentFacingMode));
@@ -145,6 +168,9 @@ function setupScannerEventListeners() {
   document.getElementById("processPhoto").addEventListener("click", processCapturedImage);
   document.getElementById("fileInput").addEventListener("change", uploadImage);
   document.getElementById("closeScanner").addEventListener("click", closeScanModal);
+  
+  // Add minimize functionality
+  document.getElementById("minimizeScanner").addEventListener("click", toggleScannerSize);
 }
 
 function resetScannerUI() {
@@ -201,6 +227,7 @@ function startCamera(facingMode = currentFacingMode) {
 function showCameraControls() {
   document.getElementById("startCamera").style.display = "none";
   document.getElementById("capturePhoto").style.display = "inline-block";
+  updateScanStatus("📷 Camera ready - Click 'Capture Photo' to take a picture");
 }
 
 function stopCamera() {
@@ -412,6 +439,11 @@ function hideProcessingStatus() {
 function updateProcessingStatus(message) {
   const statusDiv = document.getElementById("scanStatus");
   statusDiv.innerHTML = `<div style="color: #4b0082; font-weight: bold;">🔄 ${message}</div>`;
+}
+
+function updateScanStatus(message) {
+  const statusDiv = document.getElementById("scanStatus");
+  statusDiv.innerHTML = `<div style="color: #333; font-weight: bold;">${message}</div>`;
 }
 
 function showError(message) {
