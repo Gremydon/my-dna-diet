@@ -248,6 +248,8 @@ function captureImage() {
     return;
   }
 
+  updateScanStatus("📸 Capturing photo...");
+  
   const canvas = document.getElementById("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
@@ -272,19 +274,16 @@ function showPhotoPreview(canvas) {
   video.style.display = "none";
   preview.style.display = "block";
   
-  // Scale preview to fit modal
-  const modalWidth = preview.offsetWidth;
-  const scale = modalWidth / canvas.width;
-  preview.width = modalWidth;
-  preview.height = canvas.height * scale;
-  
-  const ctx = preview.getContext("2d");
-  ctx.drawImage(canvas, 0, 0, preview.width, preview.height);
+  // Convert canvas to data URL and set as image source
+  const dataURL = canvas.toDataURL("image/jpeg", 0.9);
+  preview.src = dataURL;
   
   // Show retake and process buttons
   document.getElementById("capturePhoto").style.display = "none";
   document.getElementById("retakePhoto").style.display = "inline-block";
   document.getElementById("processPhoto").style.display = "inline-block";
+  
+  updateScanStatus("📸 Photo captured! Click 'Process Photo' to analyze or 'Retake' to try again");
 }
 
 function retakePhoto() {
