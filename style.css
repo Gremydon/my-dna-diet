@@ -185,6 +185,52 @@ body {
   background-color: #1ea085;
 }
 
+/* File upload interface styling */
+.file-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.file-type-card {
+  background: white;
+  padding: 10px;
+  border-radius: 6px;
+  border-left: 4px solid;
+  transition: transform 0.2s;
+}
+
+.file-type-card:hover {
+  transform: translateY(-2px);
+}
+
+.upload-status {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.upload-status.info {
+  background-color: #17a2b8;
+  color: white;
+}
+
+.upload-status.success {
+  background-color: #28a745;
+  color: white;
+}
+
+.upload-status.error {
+  background-color: #dc3545;
+  color: white;
+}
+
+.upload-status.warning {
+  background-color: #ffc107;
+  color: #212529;
+}
+
 @media (min-width: 768px) {
   .content {
     padding: 30px;

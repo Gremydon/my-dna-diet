@@ -11,6 +11,13 @@
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@2.1.1/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script>
+    // Configure PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
   <style>
     body {
       margin: 0;
@@ -307,22 +314,41 @@
         </div>
         
         <div style="margin-bottom: 20px;">
-          <h3>Option 1: Upload JSON File</h3>
-          <p>Upload a JSON file with your intolerance data in this format:</p>
-          <pre style="background: #f5f5f5; padding: 10px; border-radius: 4px; font-size: 12px; overflow-x: auto;">
-{
-  "name": "Your Name",
-  "type": "human",
-  "intolerances": [
-    { "item": "Gluten", "category": "Grain", "level": 3 },
-    { "item": "Dairy", "category": "Dairy", "level": 2 }
-  ]
-}</pre>
-          <div style="margin-bottom: 10px;">
-            <a href="sample-intolerances-template.json" download style="color: #007bff; text-decoration: none;">📥 Download Sample Template</a>
+          <h3>Option 1: Upload Files</h3>
+          <p>Upload various file types to add your intolerance data:</p>
+          
+          <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
+            <h4 style="margin: 0 0 10px 0; color: #495057;">📁 Supported File Types:</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #28a745;">
+                <strong>📄 JSON</strong><br>
+                <small>Direct intolerance data import</small>
+              </div>
+              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #17a2b8;">
+                <strong>📊 CSV/TXT</strong><br>
+                <small>Parse ingredients from lists</small>
+              </div>
+              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #ffc107;">
+                <strong>📝 DOCX/PDF</strong><br>
+                <small>Extract text for analysis</small>
+              </div>
+              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #6f42c1;">
+                <strong>🖼️ Images</strong><br>
+                <small>OCR scan for text extraction</small>
+              </div>
+            </div>
           </div>
-          <input type="file" id="jsonUpload" accept=".json" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
-          <button onclick="uploadJSONFile()" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;">Upload JSON</button>
+          
+          <div style="margin-bottom: 10px;">
+            <a href="sample-intolerances-template.json" download style="color: #007bff; text-decoration: none;">📥 Download Sample JSON Template</a>
+            <span style="margin: 0 10px;">|</span>
+            <a href="sample-ingredients-template.csv" download style="color: #007bff; text-decoration: none;">📊 Download Sample CSV Template</a>
+          </div>
+          
+          <input type="file" id="fileUpload" accept=".json,.csv,.txt,.docx,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
+          <button onclick="processUploadedFile()" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;">📤 Process File</button>
+          
+          <div id="uploadStatus" style="margin-top: 10px; padding: 10px; border-radius: 6px; display: none;"></div>
         </div>
 
         <div style="margin-bottom: 20px;">

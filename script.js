@@ -893,23 +893,72 @@ function removeIntoleranceItem(index) {
   loadCurrentIntolerances();
 }
 
-// Upload JSON file
-function uploadJSONFile() {
-  const fileInput = document.getElementById("jsonUpload");
+// Process uploaded file based on type
+function processUploadedFile() {
+  const fileInput = document.getElementById("fileUpload");
   const file = fileInput.files[0];
+  const statusDiv = document.getElementById("uploadStatus");
   
   if (!file) {
-    alert("Please select a JSON file");
+    showUploadStatus("Please select a file", "error");
     return;
   }
   
+  const fileType = file.type;
+  const fileName = file.name.toLowerCase();
+  
+  showUploadStatus("Processing file...", "info");
+  
+  // Determine file type and process accordingly
+  if (fileName.endsWith('.json')) {
+    processJSONFile(file);
+  } else if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
+    processTextFile(file);
+  } else if (fileName.endsWith('.docx')) {
+    processDocxFile(file);
+  } else if (fileName.endsWith('.pdf')) {
+    processPdfFile(file);
+  } else if (fileType.startsWith('image/')) {
+    processImageFile(file);
+  } else {
+    showUploadStatus("Sorry! That file type isn't supported yet — try using a text, JSON, or image file.", "error");
+  }
+}
+
+// Show upload status with styling
+function showUploadStatus(message, type = "info") {
+  const statusDiv = document.getElementById("uploadStatus");
+  const colors = {
+    info: "#17a2b8",
+    success: "#28a745", 
+    error: "#dc3545",
+    warning: "#ffc107"
+  };
+  
+  statusDiv.style.display = "block";
+  statusDiv.style.backgroundColor = colors[type];
+  statusDiv.style.color = "white";
+  statusDiv.style.padding = "10px";
+  statusDiv.style.borderRadius = "6px";
+  statusDiv.textContent = message;
+  
+  // Auto-hide success messages after 5 seconds
+  if (type === "success") {
+    setTimeout(() => {
+      statusDiv.style.display = "none";
+    }, 5000);
+  }
+}
+
+// Process JSON files
+function processJSONFile(file) {
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
       const data = JSON.parse(e.target.result);
       
       if (!data.intolerances || !Array.isArray(data.intolerances)) {
-        alert("Invalid JSON format. Please use the format shown in the example.");
+        showUploadStatus("Invalid JSON format. Please use the format shown in the example.", "error");
         return;
       }
       
@@ -920,7 +969,7 @@ function uploadJSONFile() {
       );
       
       if (validIntolerances.length === 0) {
-        alert("No valid intolerance items found in the JSON file.");
+        showUploadStatus("No valid intolerance items found in the JSON file.", "error");
         return;
       }
       
@@ -932,16 +981,260 @@ function uploadJSONFile() {
       loadCurrentIntolerances();
       
       // Clear file input
-      fileInput.value = "";
+      document.getElementById("fileUpload").value = "";
       
-      alert(`Successfully loaded ${validIntolerances.length} intolerance items from ${currentProfileName}`);
+      showUploadStatus(`Successfully loaded ${validIntolerances.length} intolerance items from ${currentProfileName}`, "success");
       
     } catch (error) {
-      alert("Error reading JSON file: " + error.message);
+      showUploadStatus("Error reading JSON file: " + error.message, "error");
     }
   };
   
   reader.readAsText(file);
+}
+
+// Process CSV and TXT files
+function processTextFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const content = e.target.result;
+      
+      if (file.name.toLowerCase().endsWith('.csv')) {
+        // Parse CSV
+        Papa.parse(content, {
+          complete: function(results) {
+            if (results.errors.length > 0) {
+              showUploadStatus("Error parsing CSV: " + results.errors[0].message, "error");
+              return;
+            }
+            
+            const ingredients = extractIngredientsFromCSV(results.data);
+            if (ingredients.length > 0) {
+              showUploadStatus(`Found ${ingredients.length} potential ingredients. Please review and add intolerances manually.`, "success");
+              displayExtractedIngredients(ingredients);
+            } else {
+              showUploadStatus("No ingredients found in the CSV file.", "warning");
+            }
+          }
+        });
+      } else {
+        // Parse TXT
+        const ingredients = extractIngredientsFromText(content);
+        if (ingredients.length > 0) {
+          showUploadStatus(`Found ${ingredients.length} potential ingredients. Please review and add intolerances manually.`, "success");
+          displayExtractedIngredients(ingredients);
+        } else {
+          showUploadStatus("No ingredients found in the text file.", "warning");
+        }
+      }
+      
+    } catch (error) {
+      showUploadStatus("Error reading text file: " + error.message, "error");
+    }
+  };
+  
+  reader.readAsText(file);
+}
+
+// Process DOCX files
+function processDocxFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    mammoth.extractRawText({arrayBuffer: e.target.result})
+      .then(function(result) {
+        const text = result.value;
+        const ingredients = extractIngredientsFromText(text);
+        
+        if (ingredients.length > 0) {
+          showUploadStatus(`Found ${ingredients.length} potential ingredients from DOCX. Please review and add intolerances manually.`, "success");
+          displayExtractedIngredients(ingredients);
+        } else {
+          showUploadStatus("No ingredients found in the DOCX file.", "warning");
+        }
+      })
+      .catch(function(error) {
+        showUploadStatus("Error reading DOCX file: " + error.message, "error");
+      });
+  };
+  
+  reader.readAsArrayBuffer(file);
+}
+
+// Process PDF files
+function processPdfFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const typedarray = new Uint8Array(e.target.result);
+    
+    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+      let fullText = '';
+      const promises = [];
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        promises.push(
+          pdf.getPage(i).then(function(page) {
+            return page.getTextContent();
+          }).then(function(textContent) {
+            let pageText = '';
+            for (let j = 0; j < textContent.items.length; j++) {
+              pageText += textContent.items[j].str + ' ';
+            }
+            return pageText;
+          })
+        );
+      }
+      
+      Promise.all(promises).then(function(pages) {
+        fullText = pages.join(' ');
+        const ingredients = extractIngredientsFromText(fullText);
+        
+        if (ingredients.length > 0) {
+          showUploadStatus(`Found ${ingredients.length} potential ingredients from PDF. Please review and add intolerances manually.`, "success");
+          displayExtractedIngredients(ingredients);
+        } else {
+          showUploadStatus("No ingredients found in the PDF file.", "warning");
+        }
+      });
+    }).catch(function(error) {
+      showUploadStatus("Error reading PDF file: " + error.message, "error");
+    });
+  };
+  
+  reader.readAsArrayBuffer(file);
+}
+
+// Process image files with OCR
+function processImageFile(file) {
+  showUploadStatus("Processing image with OCR...", "info");
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    Tesseract.recognize(e.target.result, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          showUploadStatus(`OCR Progress: ${Math.round(m.progress * 100)}%`, "info");
+        }
+      }
+    }).then(function(result) {
+      const text = result.data.text;
+      const ingredients = extractIngredientsFromText(text);
+      
+      if (ingredients.length > 0) {
+        showUploadStatus(`Found ${ingredients.length} potential ingredients from image. Please review and add intolerances manually.`, "success");
+        displayExtractedIngredients(ingredients);
+      } else {
+        showUploadStatus("No ingredients found in the image.", "warning");
+      }
+    }).catch(function(error) {
+      showUploadStatus("Error processing image: " + error.message, "error");
+    });
+  };
+  
+  reader.readAsDataURL(file);
+}
+
+// Extract ingredients from CSV data
+function extractIngredientsFromCSV(csvData) {
+  const ingredients = [];
+  
+  csvData.forEach(row => {
+    if (Array.isArray(row)) {
+      row.forEach(cell => {
+        if (cell && typeof cell === 'string') {
+          const extracted = extractIngredientsFromText(cell);
+          ingredients.push(...extracted);
+        }
+      });
+    }
+  });
+  
+  return [...new Set(ingredients)]; // Remove duplicates
+}
+
+// Extract ingredients from text
+function extractIngredientsFromText(text) {
+  if (!text || typeof text !== 'string') return [];
+  
+  // Common ingredient patterns
+  const ingredientPatterns = [
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g, // Capitalized words
+    /([a-z]+(?:\s+[a-z]+)*)/g, // Lowercase words
+    /([A-Z]+(?:\s+[A-Z]+)*)/g  // ALL CAPS words
+  ];
+  
+  const ingredients = [];
+  
+  ingredientPatterns.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      matches.forEach(match => {
+        const cleanMatch = match.trim();
+        if (cleanMatch.length > 2 && cleanMatch.length < 50) {
+          // Filter out common non-ingredient words
+          const excludeWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
+          if (!excludeWords.includes(cleanMatch.toLowerCase())) {
+            ingredients.push(cleanMatch);
+          }
+        }
+      });
+    }
+  });
+  
+  return [...new Set(ingredients)]; // Remove duplicates
+}
+
+// Display extracted ingredients for user review
+function displayExtractedIngredients(ingredients) {
+  const statusDiv = document.getElementById("uploadStatus");
+  
+  statusDiv.innerHTML = `
+    <div style="margin-bottom: 15px;">
+      <h4 style="margin: 0 0 10px 0;">📋 Extracted Ingredients (${ingredients.length})</h4>
+      <p style="margin: 0 0 10px 0; font-size: 14px;">Review the ingredients below and add intolerances manually:</p>
+      <div style="max-height: 200px; overflow-y: auto; background: white; border-radius: 6px; padding: 10px; border: 1px solid #ddd;">
+        ${ingredients.map(ingredient => 
+          `<div style="padding: 5px; margin: 2px 0; background: #f8f9fa; border-radius: 4px; font-size: 14px;">${ingredient}</div>`
+        ).join('')}
+      </div>
+      <button onclick="addExtractedIngredients('${ingredients.join('|')}')" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; margin-top: 10px;">
+        📝 Add All as Intolerances
+      </button>
+    </div>
+  `;
+  
+  statusDiv.style.display = "block";
+  statusDiv.style.backgroundColor = "#17a2b8";
+  statusDiv.style.color = "white";
+}
+
+// Add extracted ingredients as intolerances
+function addExtractedIngredients(ingredientsString) {
+  const ingredients = ingredientsString.split('|');
+  
+  ingredients.forEach(ingredient => {
+    if (ingredient.trim()) {
+      // Check if already exists
+      if (!userIntolerances.some(existing => existing.item.toLowerCase() === ingredient.toLowerCase())) {
+        userIntolerances.push({
+          item: ingredient.trim(),
+          category: "Other",
+          level: 1
+        });
+      }
+    }
+  });
+  
+  // Refresh display
+  loadCurrentIntolerances();
+  
+  // Auto-save
+  autoSaveIntolerances();
+  
+  showUploadStatus(`Added ${ingredients.length} ingredients as intolerances!`, "success");
+  
+  // Clear file input
+  document.getElementById("fileUpload").value = "";
 }
 
 // Save intolerances to localStorage

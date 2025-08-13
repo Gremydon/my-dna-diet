@@ -34,15 +34,25 @@ Visit the live application: [My DNA Diet](https://gremydon.github.io/my-dna-diet
 
 ### 📤 Adding Your Personal Intolerances
 
-**Option 1: Upload JSON File**
-- Download the sample template: `sample-intolerances-template.json`
-- Edit it with your personal intolerance data
-- Upload via the "Upload Intolerances" button
+**Option 1: Upload Files (Multiple Formats)**
+- **📄 JSON**: Download `sample-intolerances-template.json` for direct intolerance data import
+- **📊 CSV/TXT**: Download `sample-ingredients-template.csv` for ingredient lists
+- **📝 DOCX/PDF**: Upload documents to extract text and find ingredients
+- **🖼️ Images**: Upload photos for OCR text extraction
+- **📱 Mobile-Friendly**: Works perfectly on phones and tablets
 
 **Option 2: Manual Entry**
 - Use the form in the upload modal to add items one by one
 - Specify food item, category, and severity level (1-3)
 - Save your changes to make them available in your profile
+
+**Supported File Types:**
+- **JSON** (.json) - Direct intolerance data import
+- **CSV** (.csv) - Parse ingredient lists from spreadsheets
+- **TXT** (.txt) - Extract ingredients from text files
+- **DOCX** (.docx) - Extract text from Word documents
+- **PDF** (.pdf) - Extract text from PDF files
+- **Images** (.jpg, .png, .gif, .bmp, .webp) - OCR text extraction
 
 ### 🗑️ Profile Management
 
