@@ -26,6 +26,37 @@ body {
   justify-content: center;
   gap: 10px;
   margin: 10px 0;
+  flex-wrap: wrap;
+}
+
+.profile-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  position: relative;
+}
+
+.remove-profile {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.3s;
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 10;
+}
+
+.remove-profile:hover {
+  background-color: #c82333;
 }
 
 .pet-button {
@@ -143,6 +174,15 @@ body {
   margin: 5px 0;
   background-color: #f8f8f8;
   border-radius: 6px;
+}
+
+.upload-btn {
+  background-color: #20c997;
+  color: #fff;
+}
+
+.upload-btn:hover {
+  background-color: #1ea085;
 }
 
 @media (min-width: 768px) {

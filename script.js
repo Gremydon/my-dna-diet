@@ -9,6 +9,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // App content is already visible by default
   selectPet("Mocha"); // default pet
+  
+  // Setup upload modal event listeners
+  setupUploadModalListeners();
 });
 
 // Login function removed - no authentication required
@@ -27,11 +30,125 @@ function selectPet(petName) {
     }
   });
 
+  // If user profile is selected and it's empty, show helpful message
+  if (petName === "My Profile" && userIntolerances.length === 0) {
+    document.getElementById("scanResults").innerHTML = `
+      <div class="section" style="text-align: center; padding: 40px;">
+        <h3>👤 My Profile</h3>
+        <p style="font-size: 18px; margin: 20px 0;">Your personal intolerance profile is empty.</p>
+        <p style="margin: 20px 0;">Add your intolerances to start scanning food labels!</p>
+        <button onclick="openUploadModal()" style="background-color: #20c997; color: white; border: none; border-radius: 8px; padding: 15px 30px; font-size: 18px; cursor: pointer; margin-top: 20px;">
+          📤 Add My Intolerances
+        </button>
+      </div>
+    `;
+    return;
+  }
+
   renderIntolerances();
+}
+
+// Remove Profile Function
+function removeProfile(profileName) {
+  if (confirm(`Are you sure you want to remove ${profileName}'s profile? This will also remove their data from the app.`)) {
+    // Remove from intolerances object
+    delete intolerances[profileName];
+    
+    // Remove from localStorage if it exists
+    try {
+      localStorage.removeItem(`${profileName.toLowerCase()}-profile`);
+    } catch (error) {
+      console.log("No stored profile to remove");
+    }
+    
+    // If this was the current pet, switch to a remaining profile
+    if (currentPet === profileName) {
+      const remainingProfiles = Object.keys(intolerances);
+      if (remainingProfiles.length > 0) {
+        selectPet(remainingProfiles[0]);
+      } else {
+        // No profiles left, show message
+        currentPet = null;
+        document.getElementById("scanResults").innerHTML = 
+          '<div class="section"><h3>No Profiles Available</h3><p>Please upload your personal intolerances to get started!</p></div>';
+        document.getElementById("sharedIntolerances").style.display = "none";
+        document.getElementById("uniqueIntolerances").style.display = "none";
+      }
+    }
+    
+    // Remove the profile element from the DOM
+    const profileElements = document.querySelectorAll('.profile-item');
+    profileElements.forEach(element => {
+      if (element.querySelector('.pet-button').textContent.includes(profileName)) {
+        element.remove();
+      }
+    });
+    
+    // If all example profiles are removed, automatically show user profile button
+    const remainingExampleProfiles = document.querySelectorAll('.profile-item');
+    if (remainingExampleProfiles.length === 0 && userIntolerances.length > 0) {
+      showUserProfileButton();
+      selectPet("My Profile");
+      
+      // Show celebration message
+      setTimeout(() => {
+        document.getElementById("scanResults").innerHTML = `
+          <div class="section" style="text-align: center; padding: 40px; background: linear-gradient(135deg, #e8f5e8, #f0f8ff);">
+            <h3>🎉 Congratulations!</h3>
+            <p style="font-size: 18px; margin: 20px 0;">You've created a truly personalized experience!</p>
+            <p style="margin: 20px 0;">The app now focuses entirely on your personal intolerance data.</p>
+            <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border: 2px solid #4caf50;">
+              <h4>🚀 Ready to Use:</h4>
+              <ul style="text-align: left; max-width: 400px; margin: 10px auto;">
+                <li>📸 Scan food labels with your camera</li>
+                <li>🧬 Test ingredients manually</li>
+                <li>📋 Analyze diet plans</li>
+                <li>📁 Export your data</li>
+              </ul>
+            </div>
+          </div>
+        `;
+      }, 500);
+    }
+    
+    // Refresh the display
+    renderIntolerances();
+    
+    console.log(`✅ Removed profile: ${profileName}`);
+  }
 }
 
 // Render Intolerances Function
 function renderIntolerances() {
+  // Check if there are any profiles left
+  const availableProfiles = Object.keys(intolerances);
+  
+  if (availableProfiles.length === 0) {
+    // No profiles available, show helpful message
+    document.getElementById("sharedIntolerances").style.display = "none";
+    document.getElementById("uniqueIntolerances").style.display = "none";
+    document.getElementById("scanResults").innerHTML = `
+      <div class="section" style="text-align: center; padding: 40px;">
+        <h3>🎯 Welcome to My DNA Diet!</h3>
+        <p style="font-size: 18px; margin: 20px 0;">This is your personalized food intolerance scanner.</p>
+        <p style="margin: 20px 0;">To get started:</p>
+        <ol style="text-align: left; max-width: 400px; margin: 20px auto;">
+          <li>Click <strong>"📤 Upload Intolerances"</strong> to add your personal data</li>
+          <li>Use the camera scanner to check food labels</li>
+          <li>Test ingredients manually for quick checks</li>
+        </ol>
+        <button onclick="openUploadModal()" style="background-color: #20c997; color: white; border: none; border-radius: 8px; padding: 15px 30px; font-size: 18px; cursor: pointer; margin-top: 20px;">
+          🚀 Get Started - Upload Your Intolerances
+        </button>
+      </div>
+    `;
+    return;
+  }
+  
+  // Show the intolerance sections
+  document.getElementById("sharedIntolerances").style.display = "block";
+  document.getElementById("uniqueIntolerances").style.display = "block";
+  
   const shared = getSharedIntolerances();
   const unique = getUniqueIntolerances(currentPet);
 
@@ -625,4 +742,266 @@ function viewTerms() {
 
 function closeTermsModal() {
   document.getElementById("termsModal").style.display = "none";
-} 
+}
+
+// ===== UPLOAD INTOLERANCES MODULE =====
+
+let userIntolerances = [];
+let currentProfileName = "My Profile";
+
+// Setup upload modal event listeners
+function setupUploadModalListeners() {
+  document.getElementById("closeUpload").addEventListener("click", closeUploadModal);
+}
+
+// Open upload modal
+function openUploadModal() {
+  document.getElementById("uploadModal").style.display = "flex";
+  loadCurrentIntolerances();
+}
+
+// Close upload modal
+function closeUploadModal() {
+  document.getElementById("uploadModal").style.display = "none";
+}
+
+// Load current intolerances into the modal
+function loadCurrentIntolerances() {
+  const container = document.getElementById("currentIntolerances");
+  container.innerHTML = "";
+  
+  if (userIntolerances.length === 0) {
+    container.innerHTML = "<p style='text-align: center; color: #666;'>No intolerances added yet. Use the form above to add items.</p>";
+    return;
+  }
+  
+  userIntolerances.forEach((item, index) => {
+    const div = document.createElement("div");
+    div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px; margin: 5px 0; background: white; border-radius: 4px; border: 1px solid #ddd;";
+    
+    const levelColor = item.level === 3 ? "#ffcccc" : item.level === 2 ? "#fff3cd" : "#d4edda";
+    const levelText = item.level === 3 ? "Severe" : item.level === 2 ? "Moderate" : "Mild";
+    
+    div.innerHTML = `
+      <span style="font-weight: bold;">${item.item}</span>
+      <span style="color: #666;">${item.category}</span>
+      <span style="background: ${levelColor}; padding: 2px 8px; border-radius: 12px; font-size: 12px;">${levelText}</span>
+      <button onclick="removeIntoleranceItem(${index})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;">❌</button>
+    `;
+    
+    container.appendChild(div);
+  });
+}
+
+// Add intolerance item from form
+function addIntoleranceItem() {
+  const item = document.getElementById("itemInput").value.trim();
+  const category = document.getElementById("categoryInput").value;
+  const level = parseInt(document.getElementById("levelInput").value);
+  
+  if (!item) {
+    alert("Please enter a food item name");
+    return;
+  }
+  
+  // Check if item already exists
+  if (userIntolerances.some(existing => existing.item.toLowerCase() === item.toLowerCase())) {
+    alert("This item is already in your list");
+    return;
+  }
+  
+  userIntolerances.push({ item, category, level });
+  
+  // Clear form
+  document.getElementById("itemInput").value = "";
+  document.getElementById("categoryInput").value = "Protein";
+  document.getElementById("levelInput").value = "1";
+  
+  // Refresh display
+  loadCurrentIntolerances();
+  
+  // Auto-save to localStorage
+  autoSaveIntolerances();
+}
+
+// Remove intolerance item
+function removeIntoleranceItem(index) {
+  userIntolerances.splice(index, 1);
+  loadCurrentIntolerances();
+}
+
+// Upload JSON file
+function uploadJSONFile() {
+  const fileInput = document.getElementById("jsonUpload");
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    alert("Please select a JSON file");
+    return;
+  }
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      
+      if (!data.intolerances || !Array.isArray(data.intolerances)) {
+        alert("Invalid JSON format. Please use the format shown in the example.");
+        return;
+      }
+      
+      // Validate each intolerance item
+      const validIntolerances = data.intolerances.filter(item => 
+        item.item && item.category && item.level && 
+        [1, 2, 3].includes(item.level)
+      );
+      
+      if (validIntolerances.length === 0) {
+        alert("No valid intolerance items found in the JSON file.");
+        return;
+      }
+      
+      // Replace current intolerances
+      userIntolerances = validIntolerances;
+      currentProfileName = data.name || "Uploaded Profile";
+      
+      // Refresh display
+      loadCurrentIntolerances();
+      
+      // Clear file input
+      fileInput.value = "";
+      
+      alert(`Successfully loaded ${validIntolerances.length} intolerance items from ${currentProfileName}`);
+      
+    } catch (error) {
+      alert("Error reading JSON file: " + error.message);
+    }
+  };
+  
+  reader.readAsText(file);
+}
+
+// Save intolerances to localStorage
+function saveIntolerances() {
+  if (userIntolerances.length === 0) {
+    alert("Please add some items first.");
+    return;
+  }
+  
+  try {
+    const data = {
+      name: currentProfileName,
+      type: "user",
+      intolerances: userIntolerances,
+      lastUpdated: new Date().toISOString()
+    };
+    
+    localStorage.setItem("userIntolerances", JSON.stringify(data));
+    alert("Intolerances saved successfully! They will be available in your profile.");
+    
+    // Add to the main intolerances object
+    intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+    
+    // Show user profile button
+    showUserProfileButton();
+    
+    // Refresh the main display
+    renderIntolerances();
+    
+  } catch (error) {
+    alert("Error saving intolerances: " + error.message);
+  }
+}
+
+// Export current intolerances as JSON
+function exportCurrentIntolerances() {
+  if (userIntolerances.length === 0) {
+    alert("No intolerances to export. Please add some items first.");
+    return;
+  }
+  
+  const data = {
+    name: currentProfileName,
+    type: "user",
+    intolerances: userIntolerances,
+    lastUpdated: new Date().toISOString()
+  };
+  
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${currentProfileName.replace(/\s+/g, "_")}_intolerances.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// Clear all intolerances
+function clearAllIntolerances() {
+  if (confirm("Are you sure you want to clear all intolerances? This cannot be undone.")) {
+    userIntolerances = [];
+    loadCurrentIntolerances();
+    autoSaveIntolerances();
+  }
+}
+
+// Auto-save intolerances to localStorage
+function autoSaveIntolerances() {
+  if (userIntolerances.length > 0) {
+    try {
+      const data = {
+        name: currentProfileName,
+        type: "user",
+        intolerances: userIntolerances,
+        lastUpdated: new Date().toISOString()
+      };
+      
+      localStorage.setItem("userIntolerances", JSON.stringify(data));
+      
+      // Add to main intolerances object
+      intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+      
+      // Show user profile button
+      showUserProfileButton();
+      
+      console.log("✅ Auto-saved intolerances to localStorage");
+    } catch (error) {
+      console.error("❌ Error auto-saving intolerances:", error);
+    }
+  }
+}
+
+// Load user intolerances from localStorage on app start
+function loadUserIntolerancesFromStorage() {
+  try {
+    const stored = localStorage.getItem("userIntolerances");
+    if (stored) {
+      const data = JSON.parse(stored);
+      userIntolerances = data.intolerances || [];
+      currentProfileName = data.name || "My Profile";
+      
+      // Add to main intolerances object
+      intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+      
+      // Show user profile button
+      showUserProfileButton();
+      
+      console.log("✅ Loaded user intolerances from storage:", userIntolerances.length, "items");
+    }
+  } catch (error) {
+    console.error("❌ Error loading user intolerances from storage:", error);
+  }
+}
+
+// Show user profile button if user has intolerances
+function showUserProfileButton() {
+  const userProfileBtn = document.getElementById("userProfileBtn");
+  if (userIntolerances.length > 0) {
+    userProfileBtn.style.display = "inline-block";
+  }
+}
+
+// Call this function when the app loads
+loadUserIntolerancesFromStorage(); 

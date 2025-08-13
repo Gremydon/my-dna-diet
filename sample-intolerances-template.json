@@ -1,0 +1,56 @@
+{
+  "name": "Your Name",
+  "type": "human",
+  "intolerances": [
+    {
+      "item": "Gluten",
+      "category": "Grain",
+      "level": 3
+    },
+    {
+      "item": "Dairy",
+      "category": "Dairy",
+      "level": 2
+    },
+    {
+      "item": "Soy",
+      "category": "Protein",
+      "level": 1
+    },
+    {
+      "item": "Peanuts",
+      "category": "Nuts",
+      "level": 3
+    },
+    {
+      "item": "Shellfish",
+      "category": "Seafood",
+      "level": 3
+    },
+    {
+      "item": "Eggs",
+      "category": "Protein",
+      "level": 2
+    },
+    {
+      "item": "Wheat",
+      "category": "Grain",
+      "level": 3
+    },
+    {
+      "item": "Lactose",
+      "category": "Dairy",
+      "level": 2
+    },
+    {
+      "item": "MSG",
+      "category": "Additive",
+      "level": 1
+    },
+    {
+      "item": "Artificial Colors",
+      "category": "Additive",
+      "level": 2
+    }
+  ]
+}
