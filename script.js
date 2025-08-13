@@ -1,8 +1,71 @@
 // Firebase configuration removed - no authentication required
 
+// Safe localStorage wrapper to prevent interference with other apps
+const safeStorage = {
+  // Only allow operations on keys that start with our app prefix
+  _isValidKey: function(key) {
+    return key && typeof key === 'string' && key.startsWith('myDNADiet_');
+  },
+  
+  setItem: function(key, value) {
+    try {
+      if (this._isValidKey(key) && typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.setItem(key, value);
+        return true;
+      }
+    } catch (error) {
+      console.warn("localStorage not available:", error);
+    }
+    return false;
+  },
+  
+  getItem: function(key) {
+    try {
+      if (this._isValidKey(key) && typeof localStorage !== 'undefined' && localStorage) {
+        return localStorage.getItem(key);
+      }
+    } catch (error) {
+      console.warn("localStorage not available:", error);
+    }
+    return null;
+  },
+  
+  removeItem: function(key) {
+    try {
+      if (this._isValidKey(key) && typeof localStorage !== 'undefined' && localStorage) {
+        localStorage.removeItem(key);
+        return true;
+      }
+    } catch (error) {
+      console.warn("localStorage not available:", error);
+    }
+    return false;
+  },
+  
+  // Get all keys that belong to our app
+  getAppKeys: function() {
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage) {
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('myDNADiet_')) {
+            keys.push(key);
+          }
+        }
+        return keys;
+      }
+    } catch (error) {
+      console.warn("localStorage not available:", error);
+    }
+    return [];
+  }
+};
+
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', async function() {
   console.log("✅ App initialized - no authentication required");
+  console.log("🔒 Using safe localStorage wrapper to prevent interference with other apps");
   
   // Load intolerance data from JSON files
   await loadIntoleranceData();
@@ -12,6 +75,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Setup upload modal event listeners
   setupUploadModalListeners();
+  
+  // Log app storage keys for debugging
+  const appKeys = safeStorage.getAppKeys();
+  console.log("📱 App storage keys:", appKeys);
 });
 
 // Login function removed - no authentication required
@@ -54,12 +121,8 @@ function removeProfile(profileName) {
     // Remove from intolerances object
     delete intolerances[profileName];
     
-    // Remove from localStorage if it exists
-    try {
-      localStorage.removeItem(`${profileName.toLowerCase()}-profile`);
-    } catch (error) {
-      console.log("No stored profile to remove");
-    }
+    // Note: We don't remove from localStorage to avoid interfering with other apps
+    // The profile data is only stored in memory during the session
     
     // If this was the current pet, switch to a remaining profile
     if (currentPet === profileName) {
@@ -896,7 +959,8 @@ function saveIntolerances() {
       lastUpdated: new Date().toISOString()
     };
     
-    localStorage.setItem("userIntolerances", JSON.stringify(data));
+    // Use safe storage wrapper to avoid conflicts with other apps
+    safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
     alert("Intolerances saved successfully! They will be available in your profile.");
     
     // Add to the main intolerances object
@@ -947,6 +1011,29 @@ function clearAllIntolerances() {
   }
 }
 
+// Safely clear only our app's data (never touches other apps)
+function clearAppData() {
+  if (confirm("This will clear only My DNA Diet app data. Other apps will not be affected. Continue?")) {
+    try {
+      const appKeys = safeStorage.getAppKeys();
+      appKeys.forEach(key => {
+        safeStorage.removeItem(key);
+      });
+      console.log("✅ Cleared app data safely");
+      
+      // Reset app state
+      userIntolerances = [];
+      currentProfileName = "My Profile";
+      loadCurrentIntolerances();
+      
+      alert("App data cleared successfully. Other apps were not affected.");
+    } catch (error) {
+      console.error("❌ Error clearing app data:", error);
+      alert("Error clearing app data. Please try again.");
+    }
+  }
+}
+
 // Auto-save intolerances to localStorage
 function autoSaveIntolerances() {
   if (userIntolerances.length > 0) {
@@ -958,7 +1045,8 @@ function autoSaveIntolerances() {
         lastUpdated: new Date().toISOString()
       };
       
-      localStorage.setItem("userIntolerances", JSON.stringify(data));
+      // Use safe storage wrapper to avoid conflicts with other apps
+      safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
       
       // Add to main intolerances object
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
@@ -976,7 +1064,8 @@ function autoSaveIntolerances() {
 // Load user intolerances from localStorage on app start
 function loadUserIntolerancesFromStorage() {
   try {
-    const stored = localStorage.getItem("userIntolerances");
+    // Use safe storage wrapper to avoid conflicts with other apps
+    const stored = safeStorage.getItem("myDNADiet_userIntolerances");
     if (stored) {
       const data = JSON.parse(stored);
       userIntolerances = data.intolerances || [];
