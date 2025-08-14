@@ -318,36 +318,20 @@
           <p>Upload various file types to add your intolerance data:</p>
           
           <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-            <h4 style="margin: 0 0 10px 0; color: #495057;">📁 Supported File Types:</h4>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #28a745;">
-                <strong>📄 JSON</strong><br>
-                <small>Direct intolerance data import</small>
-              </div>
-              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #17a2b8;">
-                <strong>📊 CSV/TXT</strong><br>
-                <small>Parse ingredients from lists</small>
-              </div>
-              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #ffc107;">
-                <strong>📝 DOCX/PDF</strong><br>
-                <small>Extract text for analysis</small>
-              </div>
-              <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #6f42c1;">
-                <strong>🖼️ Images</strong><br>
-                <small>OCR scan for text extraction</small>
-              </div>
+            <h4 style="margin: 0 0 10px 0; color: #495057;">📁 File Upload (JSON Only)</h4>
+            <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #28a745;">
+              <strong>📄 JSON</strong><br>
+              <small>Direct intolerance data import</small>
             </div>
           </div>
           
           <div style="margin-bottom: 10px;">
             <a href="sample-intolerances-template.json" download style="color: #007bff; text-decoration: none;">📥 Download Sample JSON Template</a>
-            <span style="margin: 0 10px;">|</span>
-            <a href="sample-ingredients-template.csv" download style="color: #007bff; text-decoration: none;">📊 Download Sample CSV Template</a>
           </div>
           
-          <input type="file" id="fileUpload" accept=".json,.csv,.txt,.docx,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,image/*" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
+          <input type="file" id="fileUpload" accept=".json" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;">
-            💡 Supported files: JSON, CSV, TXT, DOCX, PDF, and images (JPG, PNG, GIF, etc.)
+            💡 Currently supporting JSON files only. Other file types will be re-enabled soon!
           </div>
           <button onclick="processUploadedFile()" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;">📤 Process File</button>
           

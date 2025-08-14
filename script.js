@@ -828,15 +828,26 @@ function setupUploadModalListeners() {
         console.log("File size:", file.size);
         console.log("File extension:", file.name.split('.').pop().toLowerCase());
         
-        // Show immediate feedback
+        // Show immediate feedback only for JSON files
         const statusDiv = document.getElementById("uploadStatus");
         if (statusDiv) {
-          statusDiv.style.display = "block";
-          statusDiv.style.backgroundColor = "#17a2b8";
-          statusDiv.style.color = "white";
-          statusDiv.style.padding = "10px";
-          statusDiv.style.borderRadius = "6px";
-          statusDiv.textContent = `File selected: ${file.name} (${file.type || 'unknown type'})`;
+          if (file.name.toLowerCase().endsWith('.json')) {
+            statusDiv.style.display = "block";
+            statusDiv.style.backgroundColor = "#17a2b8";
+            statusDiv.style.color = "white";
+            statusDiv.style.padding = "10px";
+            statusDiv.style.borderRadius = "6px";
+            statusDiv.textContent = `JSON file selected: ${file.name}`;
+          } else {
+            statusDiv.style.display = "block";
+            statusDiv.style.backgroundColor = "#ffc107";
+            statusDiv.style.color = "black";
+            statusDiv.style.padding = "10px";
+            statusDiv.style.borderRadius = "6px";
+            statusDiv.textContent = `Only JSON files are currently supported. Please select a .json file.`;
+            // Clear the file input for non-JSON files
+            fileInput.value = "";
+          }
         }
       }
     });
@@ -943,16 +954,10 @@ function processUploadedFile() {
   // Determine file type and process accordingly
   if (fileName.endsWith('.json')) {
     processJSONFile(file);
-  } else if (fileName.endsWith('.csv') || fileName.endsWith('.txt')) {
-    processTextFile(file);
-  } else if (fileName.endsWith('.docx')) {
-    processDocxFile(file);
-  } else if (fileName.endsWith('.pdf')) {
-    processPdfFile(file);
-  } else if (fileType.startsWith('image/')) {
-    processImageFile(file);
   } else {
-    showUploadStatus("Sorry! That file type isn't supported yet — try using a text, JSON, or image file.", "error");
+    showUploadStatus("Currently only JSON files are supported. Other file types will be re-enabled soon!", "warning");
+    // Clear the file input
+    fileInput.value = "";
   }
 }
 
