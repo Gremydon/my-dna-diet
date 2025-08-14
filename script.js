@@ -815,6 +815,20 @@ let currentProfileName = "My Profile";
 // Setup upload modal event listeners
 function setupUploadModalListeners() {
   document.getElementById("closeUpload").addEventListener("click", closeUploadModal);
+  
+  // Add file input change listener for debugging
+  const fileInput = document.getElementById("fileUpload");
+  if (fileInput) {
+    fileInput.addEventListener("change", function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        console.log("File input change event triggered");
+        console.log("Selected file:", file.name);
+        console.log("File type:", file.type);
+        console.log("File size:", file.size);
+      }
+    });
+  }
 }
 
 // Open upload modal
@@ -906,6 +920,11 @@ function processUploadedFile() {
   
   const fileType = file.type;
   const fileName = file.name.toLowerCase();
+  
+  // Debug information
+  console.log("File selected:", file.name);
+  console.log("File type:", fileType);
+  console.log("File size:", file.size);
   
   showUploadStatus("Processing file...", "info");
   
