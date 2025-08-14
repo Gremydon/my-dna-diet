@@ -1017,6 +1017,9 @@ function processJSONFile(file) {
       autoSaveIntolerances(); // Save to localStorage
       loadCurrentIntolerances(); // Refresh the UI
       
+      // Auto-select the uploaded profile to display its data
+      selectPet(currentProfileName); // Make sure we show the right profile's data
+      
       // Clear file input
       document.getElementById("fileUpload").value = "";
       
