@@ -1013,8 +1013,9 @@ function processJSONFile(file) {
       userIntolerances = validIntolerances;
       currentProfileName = data.name || "Uploaded Profile";
       
-      // Refresh display
-      loadCurrentIntolerances();
+      // Save to localStorage and refresh the UI
+      autoSaveIntolerances(); // Save to localStorage
+      loadCurrentIntolerances(); // Refresh the UI
       
       // Clear file input
       document.getElementById("fileUpload").value = "";
