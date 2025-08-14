@@ -826,6 +826,18 @@ function setupUploadModalListeners() {
         console.log("Selected file:", file.name);
         console.log("File type:", file.type);
         console.log("File size:", file.size);
+        console.log("File extension:", file.name.split('.').pop().toLowerCase());
+        
+        // Show immediate feedback
+        const statusDiv = document.getElementById("uploadStatus");
+        if (statusDiv) {
+          statusDiv.style.display = "block";
+          statusDiv.style.backgroundColor = "#17a2b8";
+          statusDiv.style.color = "white";
+          statusDiv.style.padding = "10px";
+          statusDiv.style.borderRadius = "6px";
+          statusDiv.textContent = `File selected: ${file.name} (${file.type || 'unknown type'})`;
+        }
       }
     });
   }

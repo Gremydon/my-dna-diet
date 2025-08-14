@@ -345,7 +345,10 @@
             <a href="sample-ingredients-template.csv" download style="color: #007bff; text-decoration: none;">📊 Download Sample CSV Template</a>
           </div>
           
-          <input type="file" id="fileUpload" accept="*/*" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
+          <input type="file" id="fileUpload" accept=".json,.csv,.txt,.docx,.pdf,.jpg,.jpeg,.png,.gif,.bmp,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/csv,image/*" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
+          <div style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;">
+            💡 Supported files: JSON, CSV, TXT, DOCX, PDF, and images (JPG, PNG, GIF, etc.)
+          </div>
           <button onclick="processUploadedFile()" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;">📤 Process File</button>
           
           <div id="uploadStatus" style="margin-top: 10px; padding: 10px; border-radius: 6px; display: none;"></div>
