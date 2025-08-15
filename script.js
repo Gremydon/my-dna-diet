@@ -557,6 +557,7 @@ function getSharedIntolerances() {
 function getUniqueIntolerances(petName) {
   const shared = getSharedIntolerances();
   const all = intolerances[petName] || [];
+  
   return all.filter((item) => !shared.includes(item));
 }
 
