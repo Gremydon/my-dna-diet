@@ -70,8 +70,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Load intolerance data from JSON files
   await loadIntoleranceData();
   
-  // App content is already visible by default
-  selectPet("Mocha"); // default pet
+  // Check if this is the user's first visit
+  if (!safeStorage.getItem("myDNADiet_onboardingComplete")) {
+    // Show onboarding for first-time users
+    setTimeout(() => {
+      showOnboarding();
+    }, 1000); // Small delay to let the app load first
+  } else {
+    // App content is already visible by default
+    selectPet("Mocha"); // default pet
+  }
   
   // Setup upload modal event listeners
   setupUploadModalListeners();
@@ -80,6 +88,264 @@ document.addEventListener('DOMContentLoaded', async function() {
   const appKeys = safeStorage.getAppKeys();
   console.log("📱 App storage keys:", appKeys);
 });
+
+// ===== ONBOARDING SYSTEM =====
+let currentOnboardingStep = 1;
+let selectedOnboardingOption = null;
+let onboardingIntolerances = [];
+
+// Show onboarding modal
+function showOnboarding() {
+  document.getElementById("onboardingModal").style.display = "flex";
+  currentOnboardingStep = 1;
+  selectedOnboardingOption = null;
+  onboardingIntolerances = [];
+  updateOnboardingProgress();
+  
+  // Setup onboarding event listeners
+  document.getElementById("closeOnboarding").addEventListener("click", closeOnboarding);
+  
+  // Clear any previous form data
+  document.getElementById("profileName").value = "";
+  document.getElementById("onboardingFileInput").value = "";
+  document.getElementById("onboardingItemInput").value = "";
+  
+  // Reset file upload and manual entry displays
+  document.getElementById("onboardingFileUpload").style.display = "none";
+  document.getElementById("onboardingManualEntry").style.display = "none";
+}
+
+// Close onboarding modal
+function closeOnboarding() {
+  document.getElementById("onboardingModal").style.display = "none";
+  // Mark onboarding as complete
+  safeStorage.setItem("myDNADiet_onboardingComplete", "true");
+  
+  // Show the main app content
+  selectPet("Mocha");
+}
+
+// Next onboarding step
+function nextOnboardingStep() {
+  if (currentOnboardingStep < 4) {
+    currentOnboardingStep++;
+    updateOnboardingProgress();
+  }
+}
+
+// Previous onboarding step
+function previousOnboardingStep() {
+  if (currentOnboardingStep > 1) {
+    currentOnboardingStep--;
+    updateOnboardingProgress();
+  }
+}
+
+// Update onboarding progress indicators
+function updateOnboardingProgress() {
+  // Hide all steps
+  document.querySelectorAll('.onboarding-step').forEach(step => {
+    step.style.display = 'none';
+  });
+  
+  // Show current step
+  document.getElementById(`step${currentOnboardingStep}`).style.display = 'block';
+  
+  // Update progress dots
+  document.querySelectorAll('.onboarding-dot').forEach((dot, index) => {
+    if (index + 1 <= currentOnboardingStep) {
+      dot.classList.add('active');
+    } else {
+      dot.classList.remove('active');
+    }
+  });
+  
+  // Handle step-specific logic
+  if (currentOnboardingStep === 3) {
+    // Step 3: Show appropriate input method based on selection
+    if (selectedOnboardingOption === 'manual') {
+      document.getElementById('onboardingManualEntry').style.display = 'block';
+      document.getElementById('onboardingFileUpload').style.display = 'none';
+    } else {
+      document.getElementById('onboardingFileUpload').style.display = 'block';
+      document.getElementById('onboardingManualEntry').style.display = 'none';
+    }
+  }
+}
+
+// Select onboarding option
+function selectOnboardingOption(option) {
+  selectedOnboardingOption = option;
+  
+  // Remove selection from all options
+  document.querySelectorAll('.onboarding-option').forEach(opt => {
+    opt.classList.remove('selected');
+  });
+  
+  // Add selection to clicked option
+  event.currentTarget.classList.add('selected');
+  
+  // Enable next step
+  setTimeout(() => {
+    nextOnboardingStep();
+  }, 300);
+}
+
+// Add intolerance during onboarding
+function addOnboardingIntolerance() {
+  const item = document.getElementById('onboardingItemInput').value.trim();
+  const category = document.getElementById('onboardingCategoryInput').value;
+  const level = parseInt(document.getElementById('onboardingLevelInput').value);
+  
+  if (!item) {
+    alert("Please enter a food item name");
+    return;
+  }
+  
+  // Check if item already exists
+  if (onboardingIntolerances.some(existing => existing.item.toLowerCase() === item.toLowerCase())) {
+    alert("This item is already in your list");
+    return;
+  }
+  
+  onboardingIntolerances.push({ item, category, level });
+  
+  // Clear form
+  document.getElementById('onboardingItemInput').value = '';
+  
+  // Refresh display
+  displayOnboardingIntolerances();
+}
+
+// Display onboarding intolerances
+function displayOnboardingIntolerances() {
+  const container = document.getElementById('onboardingIntolerancesList');
+  container.innerHTML = '';
+  
+  if (onboardingIntolerances.length === 0) {
+    container.innerHTML = "<p style='text-align: center; color: #666;'>No intolerances added yet.</p>";
+    return;
+  }
+  
+  onboardingIntolerances.forEach((item, index) => {
+    const div = document.createElement('div');
+    div.style.cssText = "display: flex; justify-content: space-between; align-items: center; padding: 8px; margin: 5px 0; background: white; border-radius: 4px; border: 1px solid #ddd;";
+    
+    const levelColor = item.level === 3 ? "#ffcccc" : item.level === 2 ? "#fff3cd" : "#d4edda";
+    const levelText = item.level === 3 ? "Severe" : item.level === 2 ? "Moderate" : "Mild";
+    
+    div.innerHTML = `
+      <span style="font-weight: bold;">${item.item}</span>
+      <span style="color: #666;">${item.category}</span>
+      <span style="background: ${levelColor}; padding: 2px 8px; border-radius: 12px; font-size: 12px;">${levelText}</span>
+      <button onclick="removeOnboardingIntolerance(${index})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;">❌</button>
+    `;
+    
+    container.appendChild(div);
+  });
+}
+
+// Remove onboarding intolerance
+function removeOnboardingIntolerance(index) {
+  onboardingIntolerances.splice(index, 1);
+  displayOnboardingIntolerances();
+}
+
+// Create onboarding profile
+function createOnboardingProfile() {
+  const profileName = document.getElementById('profileName').value.trim();
+  
+  if (!profileName) {
+    alert("Please enter a profile name");
+    return;
+  }
+  
+  if (selectedOnboardingOption === 'manual' && onboardingIntolerances.length === 0) {
+    alert("Please add at least one intolerance item");
+    return;
+  }
+  
+  // Handle file upload if selected
+  if (selectedOnboardingOption !== 'manual') {
+    const fileInput = document.getElementById('onboardingFileInput');
+    if (fileInput.files.length === 0) {
+      alert("Please select a file to upload");
+      return;
+    }
+    
+    // Process the file (this will be handled by the existing file processing logic)
+    const file = fileInput.files[0];
+    if (file.name.toLowerCase().endsWith('.json')) {
+      // Process JSON file
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (data.intolerances && Array.isArray(data.intolerances)) {
+            userIntolerances = data.intolerances;
+            currentProfileName = profileName;
+            completeOnboardingProfile();
+          } else {
+            alert("Invalid file format. Please use a valid intolerance data file.");
+          }
+        } catch (error) {
+          alert("Error reading file: " + error.message);
+        }
+      };
+      reader.readAsText(file);
+    } else {
+      // For other file types, we'll use the manual intolerances as a fallback
+      userIntolerances = onboardingIntolerances;
+      currentProfileName = profileName;
+      completeOnboardingProfile();
+    }
+  } else {
+    // Manual entry
+    userIntolerances = onboardingIntolerances;
+    currentProfileName = profileName;
+    completeOnboardingProfile();
+  }
+}
+
+// Complete onboarding profile creation
+function completeOnboardingProfile() {
+  // Save to localStorage
+  autoSaveIntolerances();
+  
+  // Add to main intolerances object
+  intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+  
+  // Show user profile button
+  showUserProfileButton();
+  
+  // Move to success step
+  nextOnboardingStep();
+}
+
+// Complete onboarding
+function completeOnboarding() {
+  closeOnboarding();
+  
+  // Show success message in main app
+  document.getElementById("scanResults").innerHTML = `
+    <div class="section" style="text-align: center; padding: 40px; background: linear-gradient(135deg, #e8f5e8, #f0f8ff);">
+      <h3>🎉 Welcome to My DNA Diet!</h3>
+      <p style="font-size: 18px; margin: 20px 0;">Your profile "${currentProfileName}" is now active!</p>
+      <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border: 2px solid #4caf50;">
+        <h4>🚀 Ready to Use:</h4>
+        <ul style="text-align: left; max-width: 400px; margin: 10px auto;">
+          <li>📸 Scan food labels with your camera</li>
+          <li>🧬 Test ingredients manually</li>
+          <li>📋 Analyze diet plans</li>
+          <li>📁 Export your data</li>
+        </ul>
+      </div>
+    </div>
+  `;
+  
+  // Refresh the main display
+  renderIntolerances();
+}
 
 // Login function removed - no authentication required
 

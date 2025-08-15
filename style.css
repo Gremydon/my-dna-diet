@@ -32,8 +32,8 @@ body {
 .profile-item {
   display: flex;
   align-items: center;
-  gap: 5px;
-  position: relative;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .remove-profile {
@@ -43,16 +43,12 @@ body {
   border-radius: 50%;
   width: 24px;
   height: 24px;
-  font-size: 12px;
   cursor: pointer;
+  font-size: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background-color 0.3s;
-  position: absolute;
-  top: -8px;
-  right: -8px;
-  z-index: 10;
 }
 
 .remove-profile:hover {
@@ -177,12 +173,21 @@ body {
 }
 
 .upload-btn {
-  background-color: #20c997;
+  background-color: #17a2b8;
   color: #fff;
 }
 
 .upload-btn:hover {
-  background-color: #1ea085;
+  background-color: #138496;
+}
+
+.help-btn {
+  background-color: #ffc107;
+  color: #000;
+}
+
+.help-btn:hover {
+  background-color: #e0a800;
 }
 
 /* File upload interface styling */
@@ -229,6 +234,53 @@ body {
 .upload-status.warning {
   background-color: #ffc107;
   color: #212529;
+}
+
+/* Scanner modal minimized state */
+.modal-content.minimized {
+  max-width: 400px !important;
+  max-height: 60vh !important;
+}
+
+.modal-content.minimized #scannerMainContent {
+  font-size: 0.9em;
+}
+
+.modal-content.minimized video,
+.modal-content.minimized canvas,
+.modal-content.minimized img {
+  max-height: 200px !important;
+}
+
+/* Onboarding Modal Styles */
+.onboarding-step {
+  transition: all 0.3s ease;
+}
+
+.onboarding-option {
+  transition: all 0.3s ease;
+  border: 2px solid #e0e0e0;
+}
+
+.onboarding-option:hover {
+  border-color: #4b0082;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(75, 0, 130, 0.15);
+}
+
+.onboarding-option.selected {
+  border-color: #4b0082;
+  background-color: #f8f5ff;
+  box-shadow: 0 4px 12px rgba(75, 0, 130, 0.2);
+}
+
+.onboarding-dot {
+  transition: all 0.3s ease;
+}
+
+.onboarding-dot.active {
+  background-color: #4b0082 !important;
+  transform: scale(1.2);
 }
 
 @media (min-width: 768px) {
