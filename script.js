@@ -265,6 +265,10 @@ function createOnboardingProfile() {
     return;
   }
   
+  // Set the profile name immediately
+  currentProfileName = profileName;
+  console.log("Setting profile name to:", currentProfileName);
+  
   // Handle file upload if selected
   if (selectedOnboardingOption !== 'manual') {
     const fileInput = document.getElementById('onboardingFileInput');
@@ -283,7 +287,7 @@ function createOnboardingProfile() {
           const data = JSON.parse(e.target.result);
           if (data.intolerances && Array.isArray(data.intolerances)) {
             userIntolerances = data.intolerances;
-            currentProfileName = profileName;
+            // Profile name is already set above
             completeOnboardingProfile();
           } else {
             alert("Invalid file format. Please use a valid intolerance data file.");
@@ -296,13 +300,13 @@ function createOnboardingProfile() {
     } else {
       // For other file types, we'll use the manual intolerances as a fallback
       userIntolerances = onboardingIntolerances;
-      currentProfileName = profileName;
+      // Profile name is already set above
       completeOnboardingProfile();
     }
   } else {
     // Manual entry
     userIntolerances = onboardingIntolerances;
-    currentProfileName = profileName;
+    // Profile name is already set above
     completeOnboardingProfile();
   }
 }
@@ -312,7 +316,7 @@ function completeOnboardingProfile() {
   // Save to localStorage
   autoSaveIntolerances();
   
-  // Add to main intolerances object
+  // Add to main intolerances object with proper profile name
   intolerances[currentProfileName] = userIntolerances.map(item => item.item);
   
   // Show user profile button
@@ -354,6 +358,26 @@ let currentPet = "Mocha";
 // Select Pet Function
 function selectPet(petName) {
   currentPet = petName;
+  
+  // If this is a user profile, update the currentProfileName to match
+  if (petName === "My Profile" && userIntolerances.length > 0) {
+    // Try to get the actual profile name from localStorage
+    try {
+      const stored = safeStorage.getItem("myDNADiet_userIntolerances");
+      if (stored) {
+        const data = JSON.parse(stored);
+        if (data.name && data.name !== "My Profile") {
+          currentProfileName = data.name;
+          console.log("Updated currentProfileName to:", currentProfileName);
+          
+          // Update the intolerances object with the correct profile name
+          intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating profile name:", error);
+    }
+  }
 
   const buttons = document.querySelectorAll(".pet-button");
   buttons.forEach((btn) => {
@@ -500,6 +524,20 @@ function renderIntolerances() {
     div.textContent = item;
     uniqueList.appendChild(div);
   });
+  
+  // Add profile name display at the top of scan results
+  if (currentPet && currentPet !== "My Profile") {
+    const profileNameDiv = document.createElement("div");
+    profileNameDiv.style.cssText = "background: linear-gradient(135deg, #e8f5e8, #f0f8ff); padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border-left: 4px solid #4b0082;";
+    profileNameDiv.innerHTML = `<h4 style="margin: 0; color: #4b0082;">👤 Active Profile: ${currentPet}</h4>`;
+    
+    const scanResults = document.getElementById("scanResults");
+    if (scanResults.firstChild) {
+      scanResults.insertBefore(profileNameDiv, scanResults.firstChild);
+    } else {
+      scanResults.appendChild(profileNameDiv);
+    }
+  }
 }
 
 // Dynamic intolerance data loaded from JSON files
@@ -1035,7 +1073,7 @@ function viewDiet() {
 
   const file = fileInput.files[0];
   if (!file) {
-    resultDiv.innerHTML = "<p>Please select a text file first.</p>";
+    resultDiv.innerHTML = "<p>Please select a file first.</p>";
     return;
   }
 
@@ -1044,26 +1082,31 @@ function viewDiet() {
   const intoleranceList = intolerances[currentProfile] || [];
   const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
 
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    const contents = e.target.result.toLowerCase();
-    const ingredients = contents.split(/[\n,]+/).map(line => line.trim()).filter(Boolean);
+  // Show processing status
+  resultDiv.innerHTML = `<p>🔄 Processing ${file.name}... This may take a few seconds.</p>`;
 
-    const flagged = ingredients.filter(ingredient =>
-      lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
-    );
+  const fileName = file.name.toLowerCase();
+  const fileType = file.type;
 
-    if (flagged.length > 0) {
-      resultDiv.innerHTML = `
-        <p>⚠️ The following ingredients in the uploaded diet plan may be problematic for <strong>${currentProfile}</strong>:</p>
-        <ul>${flagged.map(i => `<li style="color: red;">${i}</li>`).join("")}</ul>
-      `;
+  try {
+    // Handle different file types
+    if (fileName.endsWith('.json')) {
+      processDietJsonFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.pdf')) {
+      processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.docx')) {
+      processDietDocxFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.csv')) {
+      processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.txt')) {
+      processDietTextFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
     } else {
-      resultDiv.innerHTML = `<p style="color: green;">✅ No known intolerances found for <strong>${currentProfile}</strong>.</p>`;
+      resultDiv.innerHTML = `<p style="color: red;">❌ Unsupported file type. Please use TXT, PDF, DOCX, CSV, or JSON files.</p>`;
     }
-  };
-
-  reader.readAsText(file);
+  } catch (error) {
+    console.error("Error processing diet plan file:", error);
+    resultDiv.innerHTML = `<p style="color: red;">❌ Error processing file: ${error.message}</p>`;
+  }
 }
 
 function viewTerms() {
@@ -1648,13 +1691,13 @@ function autoSaveIntolerances() {
       // Use safe storage wrapper to avoid conflicts with other apps
       safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
       
-      // Add to main intolerances object
+      // Add to main intolerances object with proper profile name
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
       
       // Show user profile button
       showUserProfileButton();
       
-      console.log("✅ Auto-saved intolerances to localStorage");
+      console.log("✅ Auto-saved intolerances to localStorage for profile:", currentProfileName);
     } catch (error) {
       console.error("❌ Error auto-saving intolerances:", error);
     }
@@ -1671,13 +1714,19 @@ function loadUserIntolerancesFromStorage() {
       userIntolerances = data.intolerances || [];
       currentProfileName = data.name || "My Profile";
       
-      // Add to main intolerances object
+      // Add to main intolerances object with proper profile name
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
       
       // Show user profile button
       showUserProfileButton();
       
-      console.log("✅ Loaded user intolerances from storage:", userIntolerances.length, "items");
+      console.log("✅ Loaded user intolerances from storage:", userIntolerances.length, "items for profile:", currentProfileName);
+      
+      // If this is the first load and we have a user profile, select it by default
+      if (userIntolerances.length > 0 && !safeStorage.getItem("myDNADiet_profileSelected")) {
+        selectPet(currentProfileName);
+        safeStorage.setItem("myDNADiet_profileSelected", "true");
+      }
     }
   } catch (error) {
     console.error("❌ Error loading user intolerances from storage:", error);
@@ -1689,8 +1738,371 @@ function showUserProfileButton() {
   const userProfileBtn = document.getElementById("userProfileBtn");
   if (userIntolerances.length > 0) {
     userProfileBtn.style.display = "inline-block";
+    
+    // Update the button text to show the actual profile name
+    const displayName = currentProfileName !== "My Profile" ? currentProfileName : "My Profile";
+    userProfileBtn.textContent = `👤 ${displayName}`;
+    userProfileBtn.onclick = () => selectPet(displayName);
+    
+    console.log("Updated user profile button to show:", displayName);
   }
 }
 
 // Call this function when the app loads
-loadUserIntolerancesFromStorage(); 
+loadUserIntolerancesFromStorage();
+
+// Ensure profile name consistency on page load
+function ensureProfileNameConsistency() {
+  try {
+    const stored = safeStorage.getItem("myDNADiet_userIntolerances");
+    if (stored) {
+      const data = JSON.parse(stored);
+      if (data.name && data.name !== currentProfileName) {
+        currentProfileName = data.name;
+        console.log("Ensured profile name consistency:", currentProfileName);
+        
+        // Update the intolerances object with the correct profile name
+        if (userIntolerances.length > 0) {
+          intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+          console.log("Updated intolerances object for profile:", currentProfileName);
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error ensuring profile name consistency:", error);
+  }
+}
+
+// Call this after loading user intolerances
+setTimeout(ensureProfileNameConsistency, 100);
+
+// Debug function to log current state
+function logCurrentState() {
+  console.log("=== Current App State ===");
+  console.log("currentPet:", currentPet);
+  console.log("currentProfileName:", currentProfileName);
+  console.log("userIntolerances.length:", userIntolerances.length);
+  console.log("Available profiles:", Object.keys(intolerances));
+  console.log("localStorage keys:", safeStorage.getAppKeys());
+  
+  try {
+    const stored = safeStorage.getItem("myDNADiet_userIntolerances");
+    if (stored) {
+      const data = JSON.parse(stored);
+      console.log("Stored profile data:", data);
+    }
+  } catch (error) {
+    console.error("Error reading stored data:", error);
+  }
+  console.log("========================");
+}
+
+// Log state after a delay to help with debugging
+setTimeout(logCurrentState, 500);
+
+// Function to refresh profile data from localStorage
+function refreshProfileData() {
+  try {
+    console.log("🔄 Refreshing profile data...");
+    
+    // Reload user intolerances from storage
+    const stored = safeStorage.getItem("myDNADiet_userIntolerances");
+    if (stored) {
+      const data = JSON.parse(stored);
+      userIntolerances = data.intolerances || [];
+      currentProfileName = data.name || "My Profile";
+      
+      // Update the intolerances object with the correct profile name
+      intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+      
+      // Show user profile button
+      showUserProfileButton();
+      
+      // Refresh the display
+      loadCurrentIntolerances();
+      
+      // Update the main app display
+      if (currentPet === "My Profile" || currentPet === currentProfileName) {
+        renderIntolerances();
+      }
+      
+      console.log("✅ Profile data refreshed successfully");
+      console.log("Profile name:", currentProfileName);
+      console.log("Intolerances count:", userIntolerances.length);
+      
+      // Show success message
+      const statusDiv = document.getElementById("uploadStatus");
+      if (statusDiv) {
+        showUploadStatus(`Profile refreshed: ${currentProfileName} (${userIntolerances.length} intolerances)`, "success");
+      }
+    } else {
+      console.log("No stored profile data found");
+      if (document.getElementById("uploadStatus")) {
+        showUploadStatus("No stored profile data found", "warning");
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error refreshing profile data:", error);
+    if (document.getElementById("uploadStatus")) {
+      showUploadStatus("Error refreshing profile data: " + error.message, "error");
+    }
+  }
+}
+
+// Function to show debug information
+function showDebugInfo() {
+  const debugDiv = document.getElementById("debugInfo");
+  if (!debugDiv) return;
+  
+  try {
+    const stored = safeStorage.getItem("myDNADiet_userIntolerances");
+    let debugHTML = "<strong>Current App State:</strong><br>";
+    debugHTML += `• Current Pet: ${currentPet}<br>`;
+    debugHTML += `• Current Profile Name: ${currentProfileName}<br>`;
+    debugHTML += `• User Intolerances Count: ${userIntolerances.length}<br>`;
+    debugHTML += `• Available Profiles: ${Object.keys(intolerances).join(", ")}<br>`;
+    debugHTML += `• localStorage Keys: ${safeStorage.getAppKeys().join(", ")}<br><br>`;
+    
+    if (stored) {
+      const data = JSON.parse(stored);
+      debugHTML += "<strong>Stored Profile Data:</strong><br>";
+      debugHTML += `• Profile Name: ${data.name || "Not set"}<br>`;
+      debugHTML += `• Intolerances Count: ${data.intolerances ? data.intolerances.length : 0}<br>`;
+      debugHTML += `• Last Updated: ${data.lastUpdated || "Not set"}<br>`;
+      debugHTML += `• Type: ${data.type || "Not set"}`;
+    } else {
+      debugHTML += "<strong>No stored profile data found</strong>";
+    }
+    
+    debugDiv.innerHTML = debugHTML;
+    debugDiv.style.display = "block";
+  } catch (error) {
+    debugDiv.innerHTML = `<strong>Error getting debug info:</strong> ${error.message}`;
+    debugDiv.style.display = "block";
+  }
+}
+
+// Diet plan file processing functions
+function processDietTextFile(file, currentProfile, lowerCaseIntolerances, resultDiv) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const contents = e.target.result.toLowerCase();
+      const ingredients = contents.split(/[\n,]+/).map(line => line.trim()).filter(Boolean);
+      analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntolerances, resultDiv);
+    } catch (error) {
+      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading text file: ${error.message}</p>`;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function processDietJsonFile(file, currentProfile, lowerCaseIntolerances, resultDiv) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const data = JSON.parse(e.target.result);
+      let ingredients = [];
+      
+      // Handle different JSON structures
+      if (data.ingredients && Array.isArray(data.ingredients)) {
+        ingredients = data.ingredients;
+      } else if (data.diet && data.diet.ingredients) {
+        ingredients = data.diet.ingredients;
+      } else if (data.foods && Array.isArray(data.foods)) {
+        ingredients = data.foods;
+      } else if (data.items && Array.isArray(data.items)) {
+        ingredients = data.items;
+      } else {
+        // Try to extract any array of strings
+        const allKeys = Object.keys(data);
+        for (const key of allKeys) {
+          if (Array.isArray(data[key]) && data[key].length > 0 && typeof data[key][0] === 'string') {
+            ingredients = data[key];
+            break;
+          }
+        }
+      }
+      
+      if (ingredients.length === 0) {
+        resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in JSON file. Please check the file format.</p>`;
+        return;
+      }
+      
+      // Convert to lowercase for analysis
+      const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
+      analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
+    } catch (error) {
+      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading JSON file: ${error.message}</p>`;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultDiv) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const content = e.target.result;
+      Papa.parse(content, {
+        complete: function(results) {
+          if (results.errors.length > 0) {
+            resultDiv.innerHTML = `<p style="color: red;">❌ Error parsing CSV: ${results.errors[0].message}</p>`;
+            return;
+          }
+          
+          const ingredients = extractIngredientsFromCSV(results.data);
+          if (ingredients.length > 0) {
+            const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
+            analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
+          } else {
+            resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in CSV file.</p>`;
+          }
+        }
+      });
+    } catch (error) {
+      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading CSV file: ${error.message}</p>`;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function processDietDocxFile(file, currentProfile, lowerCaseIntolerances, resultDiv) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    mammoth.extractRawText({arrayBuffer: e.target.result})
+      .then(function(result) {
+        try {
+          const text = result.value;
+          const ingredients = extractIngredientsFromText(text);
+          
+          if (ingredients.length > 0) {
+            const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
+            analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
+          } else {
+            resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in DOCX file.</p>`;
+          }
+        } catch (error) {
+          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing DOCX content: ${error.message}</p>`;
+        }
+      })
+      .catch(function(error) {
+        resultDiv.innerHTML = `<p style="color: red;">❌ Error reading DOCX file: ${error.message}</p>`;
+      });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultDiv) {
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const typedarray = new Uint8Array(e.target.result);
+    
+    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+      let fullText = '';
+      const promises = [];
+      
+      for (let i = 1; i <= pdf.numPages; i++) {
+        promises.push(
+          pdf.getPage(i).then(function(page) {
+            return page.getTextContent();
+          }).then(function(textContent) {
+            let pageText = '';
+            for (let j = 0; j < textContent.items.length; j++) {
+              pageText += textContent.items[j].str + ' ';
+            }
+            return pageText;
+          })
+        );
+      }
+      
+      Promise.all(promises).then(function(pages) {
+        try {
+          fullText = pages.join(' ');
+          const ingredients = extractIngredientsFromText(fullText);
+          
+          if (ingredients.length > 0) {
+            const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
+            analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
+          } else {
+            resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in PDF file.</p>`;
+          }
+        } catch (error) {
+          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing PDF content: ${error.message}</p>`;
+        }
+      });
+    }).catch(function(error) {
+      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading PDF file: ${error.message}</p>`;
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// Common function to analyze diet ingredients
+function analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntolerances, resultDiv) {
+  const flagged = ingredients.filter(ingredient =>
+    lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
+  );
+
+  if (flagged.length > 0) {
+    resultDiv.innerHTML = `
+      <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 10px 0;">
+        <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Diet Plan Analysis Results</h4>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${currentProfile}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Total Ingredients Analyzed:</strong> ${ingredients.length}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Potential Issues Found:</strong> ${flagged.length}</p>
+        
+        <div style="background: #ffcccc; border: 1px solid #ffb3b3; border-radius: 6px; padding: 10px; margin: 10px 0;">
+          <p style="margin: 0 0 10px 0; color: #721c24; font-weight: bold;">🚨 Problematic Ingredients:</p>
+          <ul style="margin: 0; padding-left: 20px; color: #721c24;">
+            ${flagged.map(i => `<li>${i}</li>`).join("")}
+          </ul>
+        </div>
+        
+        <p style="margin: 10px 0 0 0; color: #856404; font-size: 14px;">
+          💡 <strong>Recommendation:</strong> Consider alternatives for the flagged ingredients or consult with a healthcare provider.
+        </p>
+      </div>
+    `;
+  } else {
+    resultDiv.innerHTML = `
+      <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin: 10px 0;">
+        <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Diet Plan Analysis Complete</h4>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${currentProfile}</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Total Ingredients Analyzed:</strong> ${ingredients.length}</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Issues Found:</strong> None! 🎉</p>
+        
+        <p style="margin: 10px 0 0 0; color: #155724; font-size: 14px;">
+          💡 <strong>Great news!</strong> This diet plan appears to be safe for your current intolerance profile.
+        </p>
+      </div>
+    `;
+  }
+}
+
+// Section toggle functions
+function toggleTestFoodSection() {
+  const content = document.getElementById("testFoodContent");
+  const section = document.getElementById("test-food-section");
+  
+  if (content.style.display === "none") {
+    content.style.display = "block";
+    section.classList.remove("collapsed");
+  } else {
+    content.style.display = "none";
+    section.classList.add("collapsed");
+  }
+}
+
+function toggleDietPlanSection() {
+  const content = document.getElementById("dietPlanContent");
+  const section = document.getElementById("diet-plan-section");
+  
+  if (content.style.display === "none") {
+    content.style.display = "block";
+    section.classList.remove("collapsed");
+  } else {
+    content.style.display = "none";
+    section.classList.add("collapsed");
+  }
+} 

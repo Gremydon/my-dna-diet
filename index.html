@@ -235,17 +235,30 @@
       </div>
 
       <section id="test-food-section" class="section">
-        <h3>Test a Food Item</h3>
-        <textarea id="testFoodInput" placeholder="Enter food ingredients here..." rows="4" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-family: inherit; margin-bottom: 10px;"></textarea>
-        <button class="test-btn" onclick="testFood()">Analyze</button>
-        <div id="testFoodResults"></div>
+        <div class="section-header">
+          <h3>Test a Food Item</h3>
+          <button onclick="toggleTestFoodSection()" class="close-section-btn" title="Collapse/Expand Section">❌</button>
+        </div>
+        <div id="testFoodContent">
+          <textarea id="testFoodInput" placeholder="Enter food ingredients here..." rows="4" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-family: inherit; margin-bottom: 10px;"></textarea>
+          <button class="test-btn" onclick="testFood()">Analyze</button>
+          <div id="testFoodResults"></div>
+        </div>
       </section>
 
       <section id="diet-plan-section" class="section">
-        <h3>Upload a Diet Plan</h3>
-        <input type="file" id="dietPlanUpload" accept=".txt" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-family: inherit; margin-bottom: 10px;">
-        <button class="diet-btn" onclick="viewDiet()">Analyze Diet Plan</button>
-        <div id="dietPlanResults"></div>
+        <div class="section-header">
+          <h3>Upload a Diet Plan</h3>
+          <button onclick="toggleDietPlanSection()" class="close-section-btn" title="Collapse/Expand Section">❌</button>
+        </div>
+        <div id="dietPlanContent">
+          <input type="file" id="dietPlanUpload" accept=".txt,.pdf,.docx,.csv,.json" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-family: inherit; margin-bottom: 10px;">
+          <div style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;">
+            💡 Supported formats: TXT, PDF, DOCX, CSV, JSON
+          </div>
+          <button class="diet-btn" onclick="viewDiet()">🔍 Analyze Diet Plan</button>
+          <div id="dietPlanResults"></div>
+        </div>
       </section>
 
       <div id="sharedIntolerances" class="section">
@@ -365,6 +378,10 @@
 
         <div style="margin-bottom: 20px;">
           <h3>Current Intolerances</h3>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-size: 14px; color: #666;">Your uploaded intolerances will appear here</span>
+            <button onclick="refreshProfileData()" style="background-color: #6c757d; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px;">🔄 Refresh</button>
+          </div>
           <div id="currentIntolerances" style="max-height: 200px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 10px; background: #f9f9f9;">
             <!-- Current items will be displayed here -->
           </div>
@@ -564,9 +581,15 @@
                 </ul>
               </div>
               
-              <button onclick="completeOnboarding()" style="background-color: #28a745; color: white; border: none; border-radius: 8px; padding: 15px 30px; font-size: 16px; cursor: pointer;">
-                Start Using My DNA Diet! 🧬
-              </button>
+                        <button onclick="completeOnboarding()" style="background-color: #28a745; color: white; border: none; border-radius: 8px; padding: 15px 30px; font-size: 16px; cursor: pointer;">
+            Start Using My DNA Diet! 🧬
+          </button>
+          
+          <div style="margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #dee2e6;">
+            <h4 style="margin: 0 0 10px 0; color: #6c757d;">🔧 Debug Info</h4>
+            <button onclick="showDebugInfo()" style="background-color: #6c757d; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; font-size: 12px;">Show Debug Info</button>
+            <div id="debugInfo" style="margin-top: 10px; font-size: 12px; color: #666; display: none;"></div>
+          </div>
             </div>
           </div>
         </div>

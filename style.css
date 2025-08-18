@@ -98,6 +98,46 @@ body {
 
 .intolerance-item {
   padding: 10px;
+
+/* Collapsible section styles */
+.section {
+  transition: opacity 0.3s ease;
+}
+
+.section.collapsed {
+  opacity: 0.7;
+}
+
+.section.collapsed h3 {
+  color: #666;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.section-header h3 {
+  margin: 0;
+  color: #4b0082;
+}
+
+.close-section-btn {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.3s;
+}
+
+.close-section-btn:hover {
+  background-color: #c82333;
+}
   margin: 5px 0;
   border-radius: 8px;
   background-color: #f8f8f8;
