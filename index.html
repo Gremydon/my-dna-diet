@@ -222,9 +222,9 @@
 
       <div class="button-row">
         <button class="export-btn" onclick="exportCSV()">📁 Export CSV</button>
-        <button class="test-btn" onclick="testFood()">Test Ingredient 🧬</button>
+        <button class="test-btn" onclick="openTestIngredientModal()">Test Ingredient 🧬</button>
         <button class="scan-btn" onclick="openScanModal()">📸 Scan</button>
-        <button class="diet-btn" onclick="viewDiet()">My Diet Plan 📋</button>
+        <button class="diet-btn" onclick="openDietPlanModal()">My Diet Plan 📋</button>
         <button class="upload-btn" onclick="openUploadModal()">📤 Upload Intolerances</button>
         <button class="help-btn" onclick="showOnboarding()">❓ Help</button>
         <button class="terms-btn" onclick="viewTerms()">📜 Terms</button>
@@ -234,32 +234,7 @@
         <!-- Scan results will appear here -->
       </div>
 
-      <section id="test-food-section" class="section">
-        <div class="section-header">
-          <h3>Test a Food Item</h3>
-          <button onclick="toggleTestFoodSection()" class="close-section-btn" title="Collapse/Expand Section">❌</button>
-        </div>
-        <div id="testFoodContent">
-          <textarea id="testFoodInput" placeholder="Enter food ingredients here..." rows="4" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-family: inherit; margin-bottom: 10px;"></textarea>
-          <button class="test-btn" onclick="testFood()">Analyze</button>
-          <div id="testFoodResults"></div>
-        </div>
-      </section>
 
-      <section id="diet-plan-section" class="section">
-        <div class="section-header">
-          <h3>Upload a Diet Plan</h3>
-          <button onclick="toggleDietPlanSection()" class="close-section-btn" title="Collapse/Expand Section">❌</button>
-        </div>
-        <div id="dietPlanContent">
-          <input type="file" id="dietPlanUpload" accept=".txt,.pdf,.docx,.csv,.json" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; font-family: inherit; margin-bottom: 10px;">
-          <div style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;">
-            💡 Supported formats: TXT, PDF, DOCX, CSV, JSON
-          </div>
-          <button class="diet-btn" onclick="viewDiet()">🔍 Analyze Diet Plan</button>
-          <div id="dietPlanResults"></div>
-        </div>
-      </section>
 
       <div id="sharedIntolerances" class="section">
         <h3>Shared Intolerances</h3>
@@ -392,6 +367,62 @@
           <button onclick="exportCurrentIntolerances()" style="background-color: #17a2b8; color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer;">📥 Export Current List</button>
           <button onclick="clearAllIntolerances()" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer;">🗑️ Clear All</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Test Ingredient Modal -->
+    <div id="testIngredientModal" class="modal" style="display: none;">
+      <div class="modal-content" style="max-width: 600px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h2 style="margin: 0; color: #4b0082;">🧬 Test Food Ingredients</h2>
+          <button onclick="closeTestIngredientModal()" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">❌</button>
+        </div>
+        
+        <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 10px 0; color: #1976d2;">💡 How to Use</h4>
+          <p style="margin: 0; color: #1565c0;">Enter food ingredients (one per line or separated by commas) to check if they contain any items from your current intolerance profile.</p>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <label for="testIngredientInput" style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">Enter Food Ingredients:</label>
+          <textarea id="testIngredientInput" placeholder="Enter food ingredients here...&#10;Example:&#10;wheat flour, milk, eggs, sugar" rows="6" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-family: inherit; font-size: 14px; resize: vertical;"></textarea>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 20px;">
+          <button onclick="testFoodIngredients()" style="background-color: #28a745; color: white; border: none; border-radius: 8px; padding: 12px 24px; font-size: 16px; cursor: pointer; margin-right: 10px;">🔍 Analyze Ingredients</button>
+          <button onclick="clearTestIngredients()" style="background-color: #6c757d; color: white; border: none; border-radius: 8px; padding: 12px 24px; font-size: 14px; cursor: pointer;">Clear</button>
+        </div>
+        
+        <div id="testIngredientResults" style="min-height: 50px;"></div>
+      </div>
+    </div>
+
+    <!-- Diet Plan Modal -->
+    <div id="dietPlanModal" class="modal" style="display: none;">
+      <div class="modal-content" style="max-width: 700px; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <h2 style="margin: 0; color: #4b0082;">📋 Analyze Diet Plan</h2>
+          <button onclick="closeDietPlanModal()" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">❌</button>
+        </div>
+        
+        <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+          <h4 style="margin: 0 0 10px 0; color: #1976d2;">💡 Supported File Types</h4>
+          <p style="margin: 0; color: #1565c0;">Upload diet plans, meal plans, or ingredient lists in various formats to check for potential intolerance issues.</p>
+        </div>
+        
+        <div style="margin-bottom: 20px;">
+          <label for="dietPlanUploadModal" style="display: block; margin-bottom: 8px; font-weight: bold; color: #333;">Select Your File:</label>
+          <input type="file" id="dietPlanUploadModal" accept=".txt,.pdf,.docx,.csv,.json" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-family: inherit; margin-bottom: 10px;">
+          <div style="font-size: 12px; color: #666; text-align: center; margin-bottom: 15px;">
+            💡 Supported formats: TXT, PDF, DOCX, CSV, JSON
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 20px;">
+          <button onclick="analyzeDietPlan()" style="background-color: #28a745; color: white; border: none; border-radius: 8px; padding: 12px 24px; font-size: 16px; cursor: pointer;">🔍 Analyze Diet Plan</button>
+        </div>
+        
+        <div id="dietPlanResultsModal" style="min-height: 50px;"></div>
       </div>
     </div>
 

@@ -2081,28 +2081,144 @@ function analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntoleranc
 }
 
 // Section toggle functions
-function toggleTestFoodSection() {
-  const content = document.getElementById("testFoodContent");
-  const section = document.getElementById("test-food-section");
+function openTestIngredientModal() {
+  document.getElementById("testIngredientModal").style.display = "flex";
+  // Clear any previous results
+  document.getElementById("testIngredientResults").innerHTML = "";
+  // Focus on the input
+  setTimeout(() => {
+    document.getElementById("testIngredientInput").focus();
+  }, 100);
+}
+
+function closeTestIngredientModal() {
+  document.getElementById("testIngredientModal").style.display = "none";
+  // Clear the input and results
+  document.getElementById("testIngredientInput").value = "";
+  document.getElementById("testIngredientResults").innerHTML = "";
+}
+
+function openDietPlanModal() {
+  document.getElementById("dietPlanModal").style.display = "flex";
+  // Clear any previous results
+  document.getElementById("dietPlanResultsModal").innerHTML = "";
+  // Clear the file input
+  document.getElementById("dietPlanUploadModal").value = "";
+}
+
+function closeDietPlanModal() {
+  document.getElementById("dietPlanModal").style.display = "none";
+  // Clear the file input and results
+  document.getElementById("dietPlanUploadModal").value = "";
+  document.getElementById("dietPlanResultsModal").innerHTML = "";
+}
+
+// Test food ingredients function for the modal
+function testFoodIngredients() {
+  const input = document.getElementById("testIngredientInput").value.trim();
+  const resultDiv = document.getElementById("testIngredientResults");
+
+  if (!input) {
+    resultDiv.innerHTML = "<p style='color: #dc3545; text-align: center; padding: 10px; background-color: #f8d7da; border-radius: 6px;'>Please enter some ingredients first.</p>";
+    return;
+  }
+
+  const ingredients = input
+    .toLowerCase()
+    .split(/[\n,]+/) // split on newlines or commas
+    .map(i => i.trim())
+    .filter(i => i.length > 0);
+
+  // Get the intolerance list for the current pet
+  const intoleranceList = intolerances[currentPet] || [];
   
-  if (content.style.display === "none") {
-    content.style.display = "block";
-    section.classList.remove("collapsed");
+  // Normalize the intolerance list
+  const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
+
+  const flagged = ingredients.filter(ingredient =>
+    lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
+  );
+
+  if (flagged.length > 0) {
+    resultDiv.innerHTML = `
+      <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 10px 0;">
+        <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Potential Issues Found</h4>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${currentPet}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Issues Found:</strong> ${flagged.length}</p>
+        
+        <div style="background: #ffcccc; border: 1px solid #ffb3b3; border-radius: 6px; padding: 10px; margin: 10px 0;">
+          <p style="margin: 0 0 10px 0; color: #721c24; font-weight: bold;">🚨 Problematic Ingredients:</p>
+          <ul style="margin: 0; padding-left: 20px; color: #721c24;">
+            ${flagged.map(i => `<li>${i}</li>`).join("")}
+          </ul>
+        </div>
+        
+        <p style="margin: 10px 0 0 0; color: #856404; font-size: 14px;">
+          💡 <strong>Recommendation:</strong> Consider alternatives for the flagged ingredients or consult with a healthcare provider.
+        </p>
+      </div>
+    `;
   } else {
-    content.style.display = "none";
-    section.classList.add("collapsed");
+    resultDiv.innerHTML = `
+      <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin: 10px 0;">
+        <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Analysis Complete</h4>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${currentPet}</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Issues Found:</strong> None! 🎉</p>
+        
+        <p style="margin: 10px 0 0 0; color: #155724; font-size: 14px;">
+          💡 <strong>Great news!</strong> These ingredients appear to be safe for your current intolerance profile.
+        </p>
+      </div>
+    `;
   }
 }
 
-function toggleDietPlanSection() {
-  const content = document.getElementById("dietPlanContent");
-  const section = document.getElementById("diet-plan-section");
-  
-  if (content.style.display === "none") {
-    content.style.display = "block";
-    section.classList.remove("collapsed");
-  } else {
-    content.style.display = "none";
-    section.classList.add("collapsed");
+// Clear test ingredients function
+function clearTestIngredients() {
+  document.getElementById("testIngredientInput").value = "";
+  document.getElementById("testIngredientResults").innerHTML = "";
+}
+
+// Analyze diet plan function for the modal
+function analyzeDietPlan() {
+  const fileInput = document.getElementById("dietPlanUploadModal");
+  const resultDiv = document.getElementById("dietPlanResultsModal");
+
+  const file = fileInput.files[0];
+  if (!file) {
+    resultDiv.innerHTML = "<p style='color: #dc3545; text-align: center; padding: 10px; background-color: #f8d7da; border-radius: 6px;'>Please select a file first.</p>";
+    return;
+  }
+
+  // Lock in current profile immediately
+  const currentProfile = currentPet;
+  const intoleranceList = intolerances[currentProfile] || [];
+  const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
+
+  // Show processing status
+  resultDiv.innerHTML = `<p style='text-align: center; padding: 10px; background-color: #e3f2fd; border-radius: 6px; color: #1976d2;'>🔄 Processing ${file.name}... This may take a few seconds.</p>`;
+
+  const fileName = file.name.toLowerCase();
+
+  try {
+    // Handle different file types
+    if (fileName.endsWith('.json')) {
+      processDietJsonFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.pdf')) {
+      processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.docx')) {
+      processDietDocxFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.csv')) {
+      processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else if (fileName.endsWith('.txt')) {
+      processDietTextFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
+    } else {
+      resultDiv.innerHTML = `<p style="color: red;">❌ Unsupported file type. Please use TXT, PDF, DOCX, CSV, or JSON files.</p>`;
+    }
+  } catch (error) {
+    console.error("Error processing diet plan file:", error);
+    resultDiv.innerHTML = `<p style="color: red;">❌ Error processing file: ${error.message}</p>`;
   }
 } 
