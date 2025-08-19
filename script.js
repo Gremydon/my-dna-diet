@@ -2436,6 +2436,9 @@ function processPDFFile(file) {
         // Extract intolerances from PDF text (5Strands format)
         const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
         
+        console.log("🔍 PDF Parsing Result - Raw intolerances array length:", intolerances.length);
+        console.log("🔍 PDF Parsing Result - Sample intolerances:", intolerances.slice(0, 10));
+        
         if (intolerances.length > 0) {
           // Get the currently selected profile
           const currentProfile = currentPet || "Mocha";
