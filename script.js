@@ -1120,7 +1120,7 @@ function viewDiet() {
       processDietJsonFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
     } else if (fileName.endsWith('.pdf')) {
       processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
-    } else if (fileName.endsWith('.docx')) {
+    } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
       processDietDocxFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
     } else if (fileName.endsWith('.csv')) {
       processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
@@ -1152,7 +1152,7 @@ let currentProfileName = "My Profile";
 function setupUploadModalListeners() {
   document.getElementById("closeUpload").addEventListener("click", closeUploadModal);
   
-  // Add file input change listener for debugging
+  // Add file input change listener for all supported file types
   const fileInput = document.getElementById("fileUpload");
   if (fileInput) {
     fileInput.addEventListener("change", function(e) {
@@ -1164,24 +1164,28 @@ function setupUploadModalListeners() {
         console.log("File size:", file.size);
         console.log("File extension:", file.name.split('.').pop().toLowerCase());
         
-        // Show immediate feedback only for JSON files
+        // Show immediate feedback for all supported file types
         const statusDiv = document.getElementById("uploadStatus");
         if (statusDiv) {
-          if (file.name.toLowerCase().endsWith('.json')) {
+          const fileName = file.name;
+          const fileExt = fileName.split('.').pop().toLowerCase();
+          const supportedFormats = ['.json', '.csv', '.pdf', '.xlsx', '.xls', '.txt', '.doc', '.docx'];
+          
+          if (supportedFormats.includes('.' + fileExt)) {
             statusDiv.style.display = "block";
             statusDiv.style.backgroundColor = "#17a2b8";
             statusDiv.style.color = "white";
             statusDiv.style.padding = "10px";
             statusDiv.style.borderRadius = "6px";
-            statusDiv.textContent = `JSON file selected: ${file.name}`;
+            statusDiv.textContent = `File selected: ${fileName} (${fileExt.toUpperCase()})`;
           } else {
             statusDiv.style.display = "block";
             statusDiv.style.backgroundColor = "#ffc107";
             statusDiv.style.color = "black";
             statusDiv.style.padding = "10px";
             statusDiv.style.borderRadius = "6px";
-            statusDiv.textContent = `Only JSON files are currently supported. Please select a .json file.`;
-            // Clear the file input for non-JSON files
+            statusDiv.textContent = `Unsupported file type. Please select: JSON, CSV, PDF, Excel, TXT, DOC, or DOCX files.`;
+            // Clear the file input for unsupported files
             fileInput.value = "";
           }
         }
@@ -1294,12 +1298,12 @@ function processUploadedFile() {
     processCSVFile(file);
   } else if (fileName.endsWith('.pdf')) {
     processPDFFile(file);
-  } else if (fileName.endsWith('.docx')) {
+  } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
     processDocxFile(file);
   } else if (fileName.endsWith('.txt')) {
     processTextFile(file);
   } else {
-    showUploadStatus("Unsupported file type. Please use JSON, CSV, Excel, PDF, DOCX, or TXT files.", "error");
+    showUploadStatus("Unsupported file type. Please use JSON, CSV, Excel, PDF, DOC, DOCX, or TXT files.", "error");
     // Clear the file input
     fileInput.value = "";
   }
@@ -1427,25 +1431,54 @@ function processTextFile(file) {
 // Process DOCX files
 function processDocxFile(file) {
   const reader = new FileReader();
-  reader.onload = function(e) {
-    mammoth.extractRawText({arrayBuffer: e.target.result})
-      .then(function(result) {
-        const text = result.value;
-        const ingredients = extractIngredientsFromText(text);
-        
-        if (ingredients.length > 0) {
-          showUploadStatus(`Found ${ingredients.length} potential ingredients from DOCX. Please review and add intolerances manually.`, "success");
-          displayExtractedIngredients(ingredients);
-        } else {
-          showUploadStatus("No ingredients found in the DOCX file.", "warning");
-        }
-      })
-      .catch(function(error) {
-        showUploadStatus("Error reading DOCX file: " + error.message, "error");
-      });
-  };
+  const fileName = file.name.toLowerCase();
   
-  reader.readAsArrayBuffer(file);
+  if (fileName.endsWith('.docx')) {
+    // Process DOCX files with mammoth
+    reader.onload = function(e) {
+      mammoth.extractRawText({arrayBuffer: e.target.result})
+        .then(function(result) {
+          const text = result.value;
+          const intolerances = extractIntolerancesFromText(text);
+          
+          if (intolerances.length > 0) {
+            // Set profile name from filename
+            const profileName = file.name.replace(/\.docx$/i, '');
+            currentProfileName = profileName;
+            
+            // Replace current intolerances
+            userIntolerances = intolerances;
+            
+            // Save to localStorage and refresh the UI
+            autoSaveIntolerances();
+            loadCurrentIntolerances();
+            
+            // Hide welcome message
+            hideWelcomeMessage();
+            
+            // Auto-select the uploaded profile
+            selectPet(currentProfileName);
+            
+            // Clear file input
+            document.getElementById("fileUpload").value = "";
+            
+            showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from DOCX file`, "success");
+          } else {
+            showUploadStatus("No intolerance data found in the DOCX file.", "warning");
+          }
+        })
+        .catch(function(error) {
+          handleFileUploadError(error, file.name);
+        });
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (fileName.endsWith('.doc')) {
+    // Process DOC files (older Word format)
+    // Note: .doc files require different processing - for now, show helpful message
+    showUploadStatus("DOC files (older Word format) are detected but require special processing. Please convert to DOCX format or use the manual entry option.", "warning");
+    // Clear the file input
+    document.getElementById("fileUpload").value = "";
+  }
 }
 
 // Process PDF files
@@ -2299,7 +2332,7 @@ function analyzeDietPlan() {
       processDietJsonFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
     } else if (fileName.endsWith('.pdf')) {
       processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
-    } else if (fileName.endsWith('.docx')) {
+    } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
       processDietDocxFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
     } else if (fileName.endsWith('.csv')) {
       processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultDiv);
@@ -2443,44 +2476,54 @@ function processPDFFile(file) {
 // Process DOCX files
 function processDocxFile(file) {
   const reader = new FileReader();
-  reader.onload = function(e) {
-    mammoth.extractRawText({arrayBuffer: e.target.result})
-      .then(function(result) {
-        const text = result.value;
-        const intolerances = extractIntolerancesFromText(text);
-        
-        if (intolerances.length > 0) {
-          // Set profile name from filename
-          const fileName = file.name.replace(/\.docx$/i, '');
-          currentProfileName = fileName;
-          
-          // Replace current intolerances
-          userIntolerances = intolerances;
-          
-          // Save to localStorage and refresh the UI
-          autoSaveIntolerances();
-          loadCurrentIntolerances();
-          
-          // Hide welcome message
-          hideWelcomeMessage();
-          
-          // Auto-select the uploaded profile
-          selectPet(currentProfileName);
-          
-          // Clear file input
-          document.getElementById("fileUpload").value = "";
-          
-          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from DOCX file`, "success");
-        } else {
-          showUploadStatus("No intolerance data found in the DOCX file.", "warning");
-        }
-      })
-      .catch(function(error) {
-        showUploadStatus("Error reading DOCX file: " + error.message, "error");
-      });
-  };
+  const fileName = file.name.toLowerCase();
   
-  reader.readAsArrayBuffer(file);
+  if (fileName.endsWith('.docx')) {
+    // Process DOCX files with mammoth
+    reader.onload = function(e) {
+      mammoth.extractRawText({arrayBuffer: e.target.result})
+        .then(function(result) {
+          const text = result.value;
+          const intolerances = extractIntolerancesFromText(text);
+          
+          if (intolerances.length > 0) {
+            // Set profile name from filename
+            const profileName = file.name.replace(/\.docx$/i, '');
+            currentProfileName = profileName;
+            
+            // Replace current intolerances
+            userIntolerances = intolerances;
+            
+            // Save to localStorage and refresh the UI
+            autoSaveIntolerances();
+            loadCurrentIntolerances();
+            
+            // Hide welcome message
+            hideWelcomeMessage();
+            
+            // Auto-select the uploaded profile
+            selectPet(currentProfileName);
+            
+            // Clear file input
+            document.getElementById("fileUpload").value = "";
+            
+            showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from DOCX file`, "success");
+          } else {
+            showUploadStatus("No intolerance data found in the DOCX file.", "warning");
+          }
+        })
+        .catch(function(error) {
+          handleFileUploadError(error, file.name);
+        });
+    };
+    reader.readAsArrayBuffer(file);
+  } else if (fileName.endsWith('.doc')) {
+    // Process DOC files (older Word format)
+    // Note: .doc files require different processing - for now, show helpful message
+    showUploadStatus("DOC files (older Word format) are detected but require special processing. Please convert to DOCX format or use the manual entry option.", "warning");
+    // Clear the file input
+    document.getElementById("fileUpload").value = "";
+  }
 }
 
 // Process TXT files
