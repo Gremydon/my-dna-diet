@@ -1507,81 +1507,7 @@ function processDocxFile(file) {
   }
 }
 
-// Process PDF files
-function processPdfFile(file) {
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    const typedarray = new Uint8Array(e.target.result);
-    
-    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
-      let fullText = '';
-      const promises = [];
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        promises.push(
-          pdf.getPage(i).then(function(page) {
-            return page.getTextContent();
-          }).then(function(textContent) {
-            let pageText = '';
-            for (let j = 0; j < textContent.items.length; j++) {
-              pageText += textContent.items[j].str + ' ';
-            }
-            return pageText;
-          })
-        );
-      }
-      
-      Promise.all(promises).then(function(pages) {
-        fullText = pages.join(' ');
-        const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
-        
-        if (intolerances.length > 0) {
-          // Get the currently selected profile
-          const currentProfile = currentPet || "Mocha";
-          
-          // Create unified intolerance object structure
-          const intoleranceData = intolerances.map(item => ({
-            item: item,
-            category: "Other",
-            level: 2
-          }));
-          
-          // Store in profile data structure
-          if (!profileData) profileData = {};
-          if (!profileData[currentProfile]) profileData[currentProfile] = {};
-          profileData[currentProfile].intolerances = intoleranceData;
-          
-          // Save to localStorage
-          saveAllProfiles();
-          
-          // Update current intolerances for UI
-          userIntolerances = intoleranceData;
-          currentProfileName = currentProfile;
-          
-          // Refresh the UI
-          loadCurrentIntolerances();
-          renderIntolerances();
-          
-          // Hide welcome message
-          hideWelcomeMessage();
-          
-          // Clear file input
-          document.getElementById("fileUpload").value = "";
-          
-          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from PDF file for ${currentProfile}`, "success");
-        } else {
-          showUploadStatus("No intolerance data found in the PDF file.", "warning");
-        }
-      }).catch(function(error) {
-        handleFileUploadError(error, file.name);
-      });
-    }).catch(function(error) {
-      handleFileUploadError(error, file.name);
-    });
-  };
-  
-  reader.readAsArrayBuffer(file);
-}
+
 
 // Process image files with OCR
 function processImageFile(file) {
@@ -2511,27 +2437,53 @@ function processPDFFile(file) {
         const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
         
         if (intolerances.length > 0) {
-          // Set profile name from filename
-          const fileName = file.name.replace(/\.pdf$/i, '');
-          currentProfileName = fileName;
+          // Get the currently selected profile
+          const currentProfile = currentPet || "Mocha";
+          console.log("🔍 PDF Processing - Current Profile:", currentProfile);
+          console.log("🔍 PDF Processing - Extracted Intolerances Count:", intolerances.length);
+          console.log("🔍 PDF Processing - Sample Intolerances:", intolerances.slice(0, 5));
           
-          // Replace current intolerances
-          userIntolerances = intolerances;
+          // Create unified intolerance object structure
+          const intoleranceData = intolerances.map(item => ({
+            item: item,
+            category: "Other",
+            level: 2
+          }));
           
-          // Save to localStorage and refresh the UI
-          autoSaveIntolerances();
+          // Store in profile data structure
+          if (!profileData) profileData = {};
+          if (!profileData[currentProfile]) profileData[currentProfile] = {};
+          profileData[currentProfile].intolerances = intoleranceData;
+          
+          console.log("🔍 PDF Processing - Profile Data Structure:", profileData);
+          console.log("🔍 PDF Processing - Stored Intolerances for Profile:", profileData[currentProfile].intolerances.length);
+          
+          // Save to localStorage
+          saveAllProfiles();
+          
+          // Update current intolerances for UI
+          userIntolerances = intoleranceData;
+          currentProfileName = currentProfile;
+          
+          console.log("🔍 PDF Processing - Updated userIntolerances:", userIntolerances.length);
+          console.log("🔍 PDF Processing - Updated currentProfileName:", currentProfileName);
+          
+          // Refresh the UI
           loadCurrentIntolerances();
+          renderIntolerances();
           
           // Hide welcome message
           hideWelcomeMessage();
           
-          // Auto-select the uploaded profile
-          selectPet(currentProfileName);
-          
           // Clear file input
           document.getElementById("fileUpload").value = "";
           
-          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from 5Strands PDF report`, "success");
+          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from PDF file for ${currentProfile}`, "success");
+          
+          // Debug: Verify profile data storage
+          setTimeout(() => {
+            verifyProfileDataStorage();
+          }, 1000);
         } else {
           showUploadStatus("No intolerance data found in the PDF. This might not be a 5Strands report or the format is different.", "warning");
         }
@@ -2710,24 +2662,72 @@ function extractIntolerancesFromText(text) {
 function extractIntolerancesFrom5StrandsPDF(text) {
   const intolerances = [];
   
-  // Regular expression to match intolerances in 5Strands format
-  const intolerancePattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g;
+  // More sophisticated patterns for 5Strands reports
+  const patterns = [
+    // Pattern 1: Look for capitalized words that are likely food items
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g,
+    // Pattern 2: Look for words in ALL CAPS (common in reports)
+    /([A-Z]{2,}(?:\s+[A-Z]{2,})*)/g,
+    // Pattern 3: Look for words after common prefixes
+    /(?:Food|Item|Ingredient|Allergen):\s*([A-Za-z\s]+)/gi,
+    // Pattern 4: Look for words in parentheses or brackets
+    /[\(\[\{]([A-Za-z\s]+)[\)\]\}]/g
+  ];
   
-  const matches = text.match(intolerancePattern);
-  if (matches) {
-    matches.forEach(match => {
-      const cleanMatch = match.trim();
-      if (cleanMatch.length > 2 && cleanMatch.length < 50) {
-        // Filter out common non-intolerance words
-        const excludeWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
-        if (!excludeWords.includes(cleanMatch.toLowerCase())) {
-          intolerances.push(cleanMatch);
+  // Common food categories and items to look for
+  const foodKeywords = [
+    'wheat', 'gluten', 'dairy', 'milk', 'eggs', 'soy', 'nuts', 'peanuts', 'shellfish', 'fish',
+    'corn', 'rice', 'oats', 'barley', 'rye', 'quinoa', 'buckwheat', 'amaranth', 'millet',
+    'beef', 'pork', 'chicken', 'turkey', 'lamb', 'venison', 'bison', 'duck', 'goose',
+    'tomato', 'potato', 'onion', 'garlic', 'pepper', 'carrot', 'celery', 'cucumber',
+    'apple', 'banana', 'orange', 'strawberry', 'blueberry', 'raspberry', 'grape',
+    'almond', 'walnut', 'cashew', 'pecan', 'hazelnut', 'macadamia', 'pistachio',
+    'sugar', 'honey', 'maple', 'agave', 'stevia', 'aspartame', 'sucralose',
+    'yeast', 'vinegar', 'citric', 'ascorbic', 'benzoic', 'sulfite', 'nitrate'
+  ];
+  
+  // Process each pattern
+  patterns.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      matches.forEach(match => {
+        const cleanMatch = match.trim();
+        
+        // Filter out common non-food words
+        const excludeWords = [
+          'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+          'this', 'that', 'these', 'those', 'is', 'are', 'was', 'were', 'be', 'been',
+          'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+          'page', 'report', 'test', 'result', 'level', 'score', 'date', 'time', 'name',
+          'address', 'phone', 'email', 'website', 'company', 'laboratory', 'medical'
+        ];
+        
+        if (cleanMatch.length > 2 && cleanMatch.length < 100) {
+          const lowerMatch = cleanMatch.toLowerCase();
+          
+          // Check if it's a food-related word or contains food keywords
+          const isFoodRelated = foodKeywords.some(keyword => 
+            lowerMatch.includes(keyword) || keyword.includes(lowerMatch)
+          );
+          
+          // Check if it's not in the exclude list
+          const isNotExcluded = !excludeWords.includes(lowerMatch);
+          
+          if (isFoodRelated || (isNotExcluded && /^[A-Za-z\s]+$/.test(cleanMatch))) {
+            intolerances.push(cleanMatch);
+          }
         }
-      }
-    });
-  }
+      });
+    }
+  });
   
-  return [...new Set(intolerances)]; // Remove duplicates
+  // Remove duplicates and sort
+  const uniqueIntolerances = [...new Set(intolerances)].sort();
+  
+  console.log(`Extracted ${uniqueIntolerances.length} potential intolerances from PDF`);
+  console.log('Sample extracted items:', uniqueIntolerances.slice(0, 10));
+  
+  return uniqueIntolerances;
 }
 
 // Toggle example profiles visibility
@@ -2814,6 +2814,20 @@ function showDebugInfo() {
     debugHTML += `• All Profiles: ${Object.keys(intolerances).join(', ')}<br>`;
     debugHTML += `• localStorage Keys: ${safeStorage.getAppKeys().join(', ')}<br><br>`;
     
+    // Show profileData structure
+    debugHTML += '<strong>Profile Data Structure:</strong><br>';
+    if (profileData && Object.keys(profileData).length > 0) {
+      Object.keys(profileData).forEach(profileName => {
+        const profile = profileData[profileName];
+        if (profile && profile.intolerances) {
+          debugHTML += `• ${profileName}: ${profile.intolerances.length} intolerances<br>`;
+        }
+      });
+    } else {
+      debugHTML += '• No profileData found<br>';
+    }
+    debugHTML += '<br>';
+    
     // Show localStorage content
     debugHTML += '<strong>localStorage Content:</strong><br>';
     safeStorage.getAppKeys().forEach(key => {
@@ -2827,6 +2841,28 @@ function showDebugInfo() {
     
     debugInfo.innerHTML = debugHTML;
     debugInfo.style.display = 'block';
+  }
+}
+
+// Debug function to verify profile data storage
+function verifyProfileDataStorage() {
+  console.log("🔍 VERIFYING PROFILE DATA STORAGE:");
+  console.log("Current Pet:", currentPet);
+  console.log("Current Profile Name:", currentProfileName);
+  console.log("User Intolerances:", userIntolerances);
+  console.log("Profile Data Structure:", profileData);
+  
+  // Check localStorage
+  const profileDataStored = safeStorage.getItem("myDNADiet_profileData");
+  console.log("Profile Data in localStorage:", profileDataStored);
+  
+  if (profileDataStored) {
+    try {
+      const parsed = JSON.parse(profileDataStored);
+      console.log("Parsed Profile Data:", parsed);
+    } catch (error) {
+      console.error("Error parsing stored profile data:", error);
+    }
   }
 }
 
@@ -2864,5 +2900,3 @@ function loadProfileDataFromStorage() {
     console.error("❌ Error loading profileData from storage:", error);
   }
 }
-
-// Load all profiles from localStorage on app start
