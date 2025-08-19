@@ -70,6 +70,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Load all profiles from localStorage first
   loadAllProfilesFromStorage();
   
+  // Load profileData from localStorage
+  loadProfileDataFromStorage();
+  
   // Load intolerance data from JSON files (only if no profiles in storage)
   if (Object.keys(intolerances).length === 0) {
     await loadIntoleranceData();
@@ -1147,47 +1150,55 @@ function closeTermsModal() {
 
 let userIntolerances = [];
 let currentProfileName = "My Profile";
+let profileData = {}; // Store profile data with intolerances structure
 
 // Setup upload modal event listeners
 function setupUploadModalListeners() {
   document.getElementById("closeUpload").addEventListener("click", closeUploadModal);
+  
+  // Add file input change listener for all supported file types
+  const fileInput = document.getElementById("fileUpload");
+  if (fileInput) {
+    fileInput.addEventListener("change", function(e) {
+      const file = e.target.files[0];
+      if (file) {
+        console.log("File input change event triggered");
+        console.log("Selected file:", file.name);
+        console.log("File type:", file.type);
+        console.log("File size:", file.size);
+        console.log("File extension:", file.name.split('.').pop().toLowerCase());
+        
+        // Show immediate feedback for all supported file types
+        const statusDiv = document.getElementById("uploadStatus");
+        if (statusDiv) {
+          const fileName = file.name;
+          const fileExt = fileName.split('.').pop().toLowerCase();
+          const supportedFormats = ['.json', '.csv', '.pdf', '.xlsx', '.xls', '.txt', '.doc', '.docx'];
+          
+          if (supportedFormats.includes('.' + fileExt)) {
+            statusDiv.style.display = "block";
+            statusDiv.style.backgroundColor = "#17a2b8";
+            statusDiv.style.color = "white";
+            statusDiv.style.padding = "10px";
+            statusDiv.style.borderRadius = "6px";
+            statusDiv.textContent = `File selected: ${fileName} (${fileExt.toUpperCase()})`;
+          } else {
+            statusDiv.style.display = "block";
+            statusDiv.style.backgroundColor = "#ffc107";
+            statusDiv.style.color = "black";
+            statusDiv.style.padding = "10px";
+            statusDiv.style.borderRadius = "6px";
+            statusDiv.textContent = `Unsupported file type. Please select: JSON, CSV, PDF, Excel, TXT, DOC, or DOCX files.`;
+            // Clear the file input for unsupported files
+            fileInput.value = "";
+          }
+        }
+      }
+    });
+  }
 }
 
-// Handle file upload and save intolerance list to selected profile
-document.getElementById("intolerance-upload").addEventListener("change", function (event) {
-    const file = event.target.files[0];
-    if (!file) return;
 
-    const allowedTypes = ["application/json"];
-    if (!allowedTypes.includes(file.type)) {
-        alert("❌ Only .json files are supported in this patch.");
-        return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = function (e) {
-        try {
-            const data = JSON.parse(e.target.result);
-            const intoleranceList = Object.keys(data); // or customize if structure is different
-
-            const currentProfile = localStorage.getItem("myDNADiet_lastActiveProfile") || "Don";
-            const profileKey = `myDNADiet_${currentProfile}_intolerances`;
-
-            localStorage.setItem(profileKey, JSON.stringify(intoleranceList));
-
-            // Update the UI or debug info
-            document.getElementById("debug-info").textContent =
-                `✅ Uploaded ${intoleranceList.length} intolerances for ${currentProfile}`;
-            console.log(`Stored for profile ${currentProfile}:`, intoleranceList);
-
-            alert(`✅ ${intoleranceList.length} intolerances uploaded for ${currentProfile}.`);
-        } catch (err) {
-            alert("❌ Error reading the file. Please ensure it's a valid JSON format.");
-            console.error(err);
-        }
-    };
-    reader.readAsText(file);
-});
 
 // Open upload modal
 function openUploadModal() {
@@ -1267,9 +1278,41 @@ function removeIntoleranceItem(index) {
 
 // Process uploaded file based on type
 function processUploadedFile() {
-    // This function is now handled by the intolerance-upload event listener
-    // Keeping it for backward compatibility but it's no longer needed
-    console.log("processUploadedFile called - now handled by intolerance-upload event listener");
+  const fileInput = document.getElementById("fileUpload");
+  const file = fileInput.files[0];
+  const statusDiv = document.getElementById("uploadStatus");
+  
+  if (!file) {
+    showUploadStatus("Please select a file", "error");
+    return;
+  }
+  
+  const fileType = file.type;
+  const fileName = file.name.toLowerCase();
+  
+  // Debug information
+  console.log("File selected:", file.name);
+  console.log("File type:", fileType);
+  console.log("File size:", file.size);
+  
+  showUploadStatus("Processing file...", "info");
+  
+  // Determine file type and process accordingly
+  if (fileName.endsWith('.json')) {
+    processJSONFile(file);
+  } else if (fileName.endsWith('.csv') || fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    processCSVFile(file);
+  } else if (fileName.endsWith('.pdf')) {
+    processPDFFile(file);
+  } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
+    processDocxFile(file);
+  } else if (fileName.endsWith('.txt')) {
+    processTextFile(file);
+  } else {
+    showUploadStatus("Unsupported file type. Please use JSON, CSV, Excel, PDF, DOC, DOCX, or TXT files.", "error");
+    // Clear the file input
+    fileInput.value = "";
+  }
 }
 
 // Show upload status with styling
@@ -1320,24 +1363,32 @@ function processJSONFile(file) {
         return;
       }
       
-      // Replace current intolerances
-      userIntolerances = validIntolerances;
-      currentProfileName = data.name || "Uploaded Profile";
+      // Get the currently selected profile
+      const currentProfile = currentPet || "Mocha";
       
-      // Save to localStorage and refresh the UI
-      autoSaveIntolerances(); // Save to localStorage
-      loadCurrentIntolerances(); // Refresh the UI
+      // Store in profile data structure
+      if (!profileData) profileData = {};
+      if (!profileData[currentProfile]) profileData[currentProfile] = {};
+      profileData[currentProfile].intolerances = validIntolerances;
+      
+      // Save to localStorage
+      saveAllProfiles();
+      
+      // Update current intolerances for UI
+      userIntolerances = validIntolerances;
+      currentProfileName = currentProfile;
+      
+      // Refresh the UI
+      loadCurrentIntolerances();
+      renderIntolerances();
       
       // Hide welcome message
       hideWelcomeMessage();
       
-      // Auto-select the uploaded profile to display its data
-      selectPet(currentProfileName); // Make sure we show the right profile's data
-      
       // Clear file input
       document.getElementById("fileUpload").value = "";
       
-      showUploadStatus(`Successfully loaded ${validIntolerances.length} intolerance items from ${currentProfileName}`, "success");
+      showUploadStatus(`Successfully loaded ${validIntolerances.length} intolerance items from JSON file for ${currentProfile}`, "success");
       
     } catch (error) {
       showUploadStatus("Error reading JSON file: " + error.message, "error");
@@ -1405,27 +1456,39 @@ function processDocxFile(file) {
           const intolerances = extractIntolerancesFromText(text);
           
           if (intolerances.length > 0) {
-            // Set profile name from filename
-            const profileName = file.name.replace(/\.docx$/i, '');
-            currentProfileName = profileName;
+            // Get the currently selected profile
+            const currentProfile = currentPet || "Mocha";
             
-            // Replace current intolerances
-            userIntolerances = intolerances;
+            // Create unified intolerance object structure
+            const intoleranceData = intolerances.map(item => ({
+              item: item,
+              category: "Other",
+              level: 2
+            }));
             
-            // Save to localStorage and refresh the UI
-            autoSaveIntolerances();
+            // Store in profile data structure
+            if (!profileData) profileData = {};
+            if (!profileData[currentProfile]) profileData[currentProfile] = {};
+            profileData[currentProfile].intolerances = intoleranceData;
+            
+            // Save to localStorage
+            saveAllProfiles();
+            
+            // Update current intolerances for UI
+            userIntolerances = intoleranceData;
+            currentProfileName = currentProfile;
+            
+            // Refresh the UI
             loadCurrentIntolerances();
+            renderIntolerances();
             
             // Hide welcome message
             hideWelcomeMessage();
             
-            // Auto-select the uploaded profile
-            selectPet(currentProfileName);
-            
             // Clear file input
             document.getElementById("fileUpload").value = "";
             
-            showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from DOCX file`, "success");
+            showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from DOCX file for ${currentProfile}`, "success");
           } else {
             showUploadStatus("No intolerance data found in the DOCX file.", "warning");
           }
@@ -1470,13 +1533,44 @@ function processPdfFile(file) {
       
       Promise.all(promises).then(function(pages) {
         fullText = pages.join(' ');
-        const ingredients = extractIngredientsFromText(fullText);
+        const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
         
-        if (ingredients.length > 0) {
-          showUploadStatus(`Found ${ingredients.length} potential ingredients from PDF. Please review and add intolerances manually.`, "success");
-          displayExtractedIngredients(ingredients);
+        if (intolerances.length > 0) {
+          // Get the currently selected profile
+          const currentProfile = currentPet || "Mocha";
+          
+          // Create unified intolerance object structure
+          const intoleranceData = intolerances.map(item => ({
+            item: item,
+            category: "Other",
+            level: 2
+          }));
+          
+          // Store in profile data structure
+          if (!profileData) profileData = {};
+          if (!profileData[currentProfile]) profileData[currentProfile] = {};
+          profileData[currentProfile].intolerances = intoleranceData;
+          
+          // Save to localStorage
+          saveAllProfiles();
+          
+          // Update current intolerances for UI
+          userIntolerances = intoleranceData;
+          currentProfileName = currentProfile;
+          
+          // Refresh the UI
+          loadCurrentIntolerances();
+          renderIntolerances();
+          
+          // Hide welcome message
+          hideWelcomeMessage();
+          
+          // Clear file input
+          document.getElementById("fileUpload").value = "";
+          
+          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from PDF file for ${currentProfile}`, "success");
         } else {
-          showUploadStatus("No ingredients found in the PDF file.", "warning");
+          showUploadStatus("No intolerance data found in the PDF file.", "warning");
         }
       }).catch(function(error) {
         handleFileUploadError(error, file.name);
@@ -1745,6 +1839,10 @@ function autoSaveIntolerances() {
 // Save all profiles to localStorage for persistence
 function saveAllProfiles() {
   try {
+    // Save the new profileData structure
+    safeStorage.setItem("myDNADiet_profileData", JSON.stringify(profileData));
+    
+    // Also save the old format for backward compatibility
     const allProfiles = {
       profiles: {},
       lastUpdated: new Date().toISOString()
@@ -1762,6 +1860,7 @@ function saveAllProfiles() {
     // Save to localStorage
     safeStorage.setItem("myDNADiet_allProfiles", JSON.stringify(allProfiles));
     console.log("✅ Saved all profiles to localStorage:", Object.keys(allProfiles.profiles));
+    console.log("✅ Saved profileData structure:", Object.keys(profileData));
   } catch (error) {
     console.error("❌ Error saving all profiles:", error);
   }
@@ -2329,27 +2428,39 @@ function processCSVFile(file) {
           
           const intolerances = extractIntolerancesFromCSV(results.data);
           if (intolerances.length > 0) {
-            // Set the profile name from filename
-            const fileName = file.name.replace(/\.(csv|xlsx|xls)$/i, '');
-            currentProfileName = fileName;
+            // Get the currently selected profile
+            const currentProfile = currentPet || "Mocha";
             
-            // Replace current intolerances
-            userIntolerances = intolerances;
+            // Create unified intolerance object structure
+            const intoleranceData = intolerances.map(item => ({
+              item: item,
+              category: "Other",
+              level: 2
+            }));
             
-            // Save to localStorage and refresh the UI
-            autoSaveIntolerances();
+            // Store in profile data structure
+            if (!profileData) profileData = {};
+            if (!profileData[currentProfile]) profileData[currentProfile] = {};
+            profileData[currentProfile].intolerances = intoleranceData;
+            
+            // Save to localStorage
+            saveAllProfiles();
+            
+            // Update current intolerances for UI
+            userIntolerances = intoleranceData;
+            currentProfileName = currentProfile;
+            
+            // Refresh the UI
             loadCurrentIntolerances();
+            renderIntolerances();
             
             // Hide welcome message
             hideWelcomeMessage();
             
-            // Auto-select the uploaded profile
-            selectPet(currentProfileName);
-            
             // Clear file input
             document.getElementById("fileUpload").value = "";
             
-            showUploadStatus(`Successfully loaded ${intolerances.length} intolerance items from ${currentProfileName}`, "success");
+            showUploadStatus(`Successfully loaded ${intolerances.length} intolerance items from CSV file for ${currentProfile}`, "success");
           } else {
             showUploadStatus("No intolerance data found in the CSV file. Please check the format.", "warning");
           }
@@ -2495,30 +2606,44 @@ function processTextFile(file) {
   reader.onload = function(e) {
     try {
       const content = e.target.result;
+      
+      // Extract intolerances from text content
       const intolerances = extractIntolerancesFromText(content);
       
       if (intolerances.length > 0) {
-        // Set profile name from filename
-        const fileName = file.name.replace(/\.txt$/i, '');
-        currentProfileName = fileName;
+        // Get the currently selected profile
+        const currentProfile = currentPet || "Mocha";
         
-        // Replace current intolerances
-        userIntolerances = intolerances;
+        // Create unified intolerance object structure
+        const intoleranceData = intolerances.map(item => ({
+          item: item,
+          category: "Other",
+          level: 2
+        }));
         
-        // Save to localStorage and refresh the UI
-        autoSaveIntolerances();
+        // Store in profile data structure
+        if (!profileData) profileData = {};
+        if (!profileData[currentProfile]) profileData[currentProfile] = {};
+        profileData[currentProfile].intolerances = intoleranceData;
+        
+        // Save to localStorage
+        saveAllProfiles();
+        
+        // Update current intolerances for UI
+        userIntolerances = intoleranceData;
+        currentProfileName = currentProfile;
+        
+        // Refresh the UI
         loadCurrentIntolerances();
+        renderIntolerances();
         
         // Hide welcome message
         hideWelcomeMessage();
         
-        // Auto-select the uploaded profile
-        selectPet(currentProfileName);
-        
         // Clear file input
         document.getElementById("fileUpload").value = "";
         
-        showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from text file`, "success");
+        showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from text file for ${currentProfile}`, "success");
       } else {
         showUploadStatus("No intolerance data found in the text file.", "warning");
       }
@@ -2723,3 +2848,21 @@ function handleFileUploadError(error, fileName) {
   
   showUploadStatus(userMessage, "error");
 }
+
+// Load profileData from localStorage on app start
+function loadProfileDataFromStorage() {
+  try {
+    const stored = safeStorage.getItem("myDNADiet_profileData");
+    if (stored) {
+      const data = JSON.parse(stored);
+      if (data && typeof data === 'object') {
+        profileData = data;
+        console.log("✅ Loaded profileData from storage:", Object.keys(profileData));
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error loading profileData from storage:", error);
+  }
+}
+
+// Load all profiles from localStorage on app start
