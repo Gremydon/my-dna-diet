@@ -67,8 +67,23 @@ document.addEventListener('DOMContentLoaded', async function() {
   console.log("✅ App initialized - no authentication required");
   console.log("🔒 Using safe localStorage wrapper to prevent interference with other apps");
   
-  // Load intolerance data from JSON files
-  await loadIntoleranceData();
+  // Load all profiles from localStorage first
+  loadAllProfilesFromStorage();
+  
+  // Load intolerance data from JSON files (only if no profiles in storage)
+  if (Object.keys(intolerances).length === 0) {
+    await loadIntoleranceData();
+  }
+  
+  // Load user intolerances from storage
+  loadUserIntolerancesFromStorage();
+  
+  // Show or hide welcome message based on profile status
+  if (userIntolerances.length > 0) {
+    hideWelcomeMessage();
+  } else {
+    showWelcomeMessage();
+  }
   
   // Check if this is the user's first visit
   if (!safeStorage.getItem("myDNADiet_onboardingComplete")) {
@@ -78,11 +93,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 1000); // Small delay to let the app load first
   } else {
     // App content is already visible by default
-    selectPet("Mocha"); // default pet
+    // Select the last active profile or default to Mocha
+    const lastProfile = safeStorage.getItem("myDNADiet_lastActiveProfile") || "Mocha";
+    selectPet(lastProfile);
   }
   
   // Setup upload modal event listeners
   setupUploadModalListeners();
+  
+  // Initialize example profiles visibility
+  initializeExampleProfilesVisibility();
   
   // Log app storage keys for debugging
   const appKeys = safeStorage.getAppKeys();
@@ -322,6 +342,9 @@ function completeOnboardingProfile() {
   // Show user profile button
   showUserProfileButton();
   
+  // Hide welcome message
+  hideWelcomeMessage();
+  
   // Move to success step
   nextOnboardingStep();
 }
@@ -358,6 +381,9 @@ let currentPet = "Mocha";
 // Select Pet Function
 function selectPet(petName) {
   currentPet = petName;
+  
+  // Save the last active profile to localStorage
+  safeStorage.setItem("myDNADiet_lastActiveProfile", petName);
   
   // If this is a user profile, update the currentProfileName to match
   if (petName === "My Profile" && userIntolerances.length > 0) {
@@ -1264,8 +1290,16 @@ function processUploadedFile() {
   // Determine file type and process accordingly
   if (fileName.endsWith('.json')) {
     processJSONFile(file);
+  } else if (fileName.endsWith('.csv') || fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    processCSVFile(file);
+  } else if (fileName.endsWith('.pdf')) {
+    processPDFFile(file);
+  } else if (fileName.endsWith('.docx')) {
+    processDocxFile(file);
+  } else if (fileName.endsWith('.txt')) {
+    processTextFile(file);
   } else {
-    showUploadStatus("Currently only JSON files are supported. Other file types will be re-enabled soon!", "warning");
+    showUploadStatus("Unsupported file type. Please use JSON, CSV, Excel, PDF, DOCX, or TXT files.", "error");
     // Clear the file input
     fileInput.value = "";
   }
@@ -1326,6 +1360,9 @@ function processJSONFile(file) {
       // Save to localStorage and refresh the UI
       autoSaveIntolerances(); // Save to localStorage
       loadCurrentIntolerances(); // Refresh the UI
+      
+      // Hide welcome message
+      hideWelcomeMessage();
       
       // Auto-select the uploaded profile to display its data
       selectPet(currentProfileName); // Make sure we show the right profile's data
@@ -1445,9 +1482,11 @@ function processPdfFile(file) {
         } else {
           showUploadStatus("No ingredients found in the PDF file.", "warning");
         }
+      }).catch(function(error) {
+        handleFileUploadError(error, file.name);
       });
     }).catch(function(error) {
-      showUploadStatus("Error reading PDF file: " + error.message, "error");
+      handleFileUploadError(error, file.name);
     });
   };
   
@@ -1694,6 +1733,9 @@ function autoSaveIntolerances() {
       // Add to main intolerances object with proper profile name
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
       
+      // Save all profiles to localStorage for persistence
+      saveAllProfiles();
+      
       // Show user profile button
       showUserProfileButton();
       
@@ -1701,6 +1743,53 @@ function autoSaveIntolerances() {
     } catch (error) {
       console.error("❌ Error auto-saving intolerances:", error);
     }
+  }
+}
+
+// Save all profiles to localStorage for persistence
+function saveAllProfiles() {
+  try {
+    const allProfiles = {
+      profiles: {},
+      lastUpdated: new Date().toISOString()
+    };
+    
+    // Save each profile
+    Object.keys(intolerances).forEach(profileName => {
+      allProfiles.profiles[profileName] = {
+        name: profileName,
+        intolerances: intolerances[profileName],
+        type: profileName === currentProfileName ? "user" : "example"
+      };
+    });
+    
+    // Save to localStorage
+    safeStorage.setItem("myDNADiet_allProfiles", JSON.stringify(allProfiles));
+    console.log("✅ Saved all profiles to localStorage:", Object.keys(allProfiles.profiles));
+  } catch (error) {
+    console.error("❌ Error saving all profiles:", error);
+  }
+}
+
+// Load all profiles from localStorage on app start
+function loadAllProfilesFromStorage() {
+  try {
+    const stored = safeStorage.getItem("myDNADiet_allProfiles");
+    if (stored) {
+      const data = JSON.parse(stored);
+      if (data.profiles) {
+        // Restore all profiles
+        Object.keys(data.profiles).forEach(profileName => {
+          const profile = data.profiles[profileName];
+          if (profile.intolerances && Array.isArray(profile.intolerances)) {
+            intolerances[profileName] = profile.intolerances;
+            console.log("✅ Restored profile:", profileName, "with", profile.intolerances.length, "intolerances");
+          }
+        });
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error loading all profiles from storage:", error);
   }
 }
 
@@ -2030,9 +2119,11 @@ function processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultD
         } catch (error) {
           resultDiv.innerHTML = `<p style="color: red;">❌ Error processing PDF content: ${error.message}</p>`;
         }
+      }).catch(function(error) {
+        handleFileUploadError(error, file.name);
       });
     }).catch(function(error) {
-      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading PDF file: ${error.message}</p>`;
+      handleFileUploadError(error, file.name);
     });
   };
   reader.readAsArrayBuffer(file);
@@ -2221,4 +2312,408 @@ function analyzeDietPlan() {
     console.error("Error processing diet plan file:", error);
     resultDiv.innerHTML = `<p style="color: red;">❌ Error processing file: ${error.message}</p>`;
   }
-} 
+}
+
+// Process CSV and Excel files
+function processCSVFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const content = e.target.result;
+      
+      // Parse CSV
+      Papa.parse(content, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          if (results.errors.length > 0) {
+            showUploadStatus("Error parsing CSV: " + results.errors[0].message, "error");
+            return;
+          }
+          
+          const intolerances = extractIntolerancesFromCSV(results.data);
+          if (intolerances.length > 0) {
+            // Set the profile name from filename
+            const fileName = file.name.replace(/\.(csv|xlsx|xls)$/i, '');
+            currentProfileName = fileName;
+            
+            // Replace current intolerances
+            userIntolerances = intolerances;
+            
+            // Save to localStorage and refresh the UI
+            autoSaveIntolerances();
+            loadCurrentIntolerances();
+            
+            // Hide welcome message
+            hideWelcomeMessage();
+            
+            // Auto-select the uploaded profile
+            selectPet(currentProfileName);
+            
+            // Clear file input
+            document.getElementById("fileUpload").value = "";
+            
+            showUploadStatus(`Successfully loaded ${intolerances.length} intolerance items from ${currentProfileName}`, "success");
+          } else {
+            showUploadStatus("No intolerance data found in the CSV file. Please check the format.", "warning");
+          }
+        }
+      });
+      
+    } catch (error) {
+      showUploadStatus("Error reading CSV file: " + error.message, "error");
+    }
+  };
+  
+  reader.readAsText(file);
+}
+
+// Process PDF files (5Strands reports)
+function processPDFFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const typedarray = new Uint8Array(e.target.result);
+    
+    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+      let fullText = '';
+      const numPages = pdf.numPages;
+      
+      // Extract text from all pages
+      const extractPageText = function(pageNum) {
+        return pdf.getPage(pageNum).then(function(page) {
+          return page.getTextContent();
+        }).then(function(textContent) {
+          let pageText = '';
+          for (let i = 0; i < textContent.items.length; i++) {
+            pageText += textContent.items[i].str + ' ';
+          }
+          return pageText;
+        });
+      };
+      
+      // Process all pages
+      const pagePromises = [];
+      for (let i = 1; i <= numPages; i++) {
+        pagePromises.push(extractPageText(i));
+      }
+      
+      Promise.all(pagePromises).then(function(pageTexts) {
+        fullText = pageTexts.join(' ');
+        
+        // Extract intolerances from PDF text (5Strands format)
+        const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
+        
+        if (intolerances.length > 0) {
+          // Set profile name from filename
+          const fileName = file.name.replace(/\.pdf$/i, '');
+          currentProfileName = fileName;
+          
+          // Replace current intolerances
+          userIntolerances = intolerances;
+          
+          // Save to localStorage and refresh the UI
+          autoSaveIntolerances();
+          loadCurrentIntolerances();
+          
+          // Hide welcome message
+          hideWelcomeMessage();
+          
+          // Auto-select the uploaded profile
+          selectPet(currentProfileName);
+          
+          // Clear file input
+          document.getElementById("fileUpload").value = "";
+          
+          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from 5Strands PDF report`, "success");
+        } else {
+          showUploadStatus("No intolerance data found in the PDF. This might not be a 5Strands report or the format is different.", "warning");
+        }
+      }).catch(function(error) {
+        handleFileUploadError(error, file.name);
+      });
+      
+    }).catch(function(error) {
+      handleFileUploadError(error, file.name);
+    });
+  };
+  
+  reader.readAsArrayBuffer(file);
+}
+
+// Process DOCX files
+function processDocxFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    mammoth.extractRawText({arrayBuffer: e.target.result})
+      .then(function(result) {
+        const text = result.value;
+        const intolerances = extractIntolerancesFromText(text);
+        
+        if (intolerances.length > 0) {
+          // Set profile name from filename
+          const fileName = file.name.replace(/\.docx$/i, '');
+          currentProfileName = fileName;
+          
+          // Replace current intolerances
+          userIntolerances = intolerances;
+          
+          // Save to localStorage and refresh the UI
+          autoSaveIntolerances();
+          loadCurrentIntolerances();
+          
+          // Hide welcome message
+          hideWelcomeMessage();
+          
+          // Auto-select the uploaded profile
+          selectPet(currentProfileName);
+          
+          // Clear file input
+          document.getElementById("fileUpload").value = "";
+          
+          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from DOCX file`, "success");
+        } else {
+          showUploadStatus("No intolerance data found in the DOCX file.", "warning");
+        }
+      })
+      .catch(function(error) {
+        showUploadStatus("Error reading DOCX file: " + error.message, "error");
+      });
+  };
+  
+  reader.readAsArrayBuffer(file);
+}
+
+// Process TXT files
+function processTextFile(file) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const content = e.target.result;
+      const intolerances = extractIntolerancesFromText(content);
+      
+      if (intolerances.length > 0) {
+        // Set profile name from filename
+        const fileName = file.name.replace(/\.txt$/i, '');
+        currentProfileName = fileName;
+        
+        // Replace current intolerances
+        userIntolerances = intolerances;
+        
+        // Save to localStorage and refresh the UI
+        autoSaveIntolerances();
+        loadCurrentIntolerances();
+        
+        // Hide welcome message
+        hideWelcomeMessage();
+        
+        // Auto-select the uploaded profile
+        selectPet(currentProfileName);
+        
+        // Clear file input
+        document.getElementById("fileUpload").value = "";
+        
+        showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from text file`, "success");
+      } else {
+        showUploadStatus("No intolerance data found in the text file.", "warning");
+      }
+      
+    } catch (error) {
+      showUploadStatus("Error reading text file: " + error.message, "error");
+    }
+  };
+  
+  reader.readAsText(file);
+}
+
+// Extract intolerances from CSV data
+function extractIntolerancesFromCSV(csvData) {
+  const intolerances = [];
+  
+  csvData.forEach(row => {
+    if (Array.isArray(row)) {
+      row.forEach(cell => {
+        if (cell && typeof cell === 'string') {
+          const extracted = extractIntolerancesFromText(cell);
+          intolerances.push(...extracted);
+        }
+      });
+    }
+  });
+  
+  return [...new Set(intolerances)]; // Remove duplicates
+}
+
+// Extract intolerances from text
+function extractIntolerancesFromText(text) {
+  if (!text || typeof text !== 'string') return [];
+  
+  // Common intolerance patterns
+  const intolerancePatterns = [
+    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g, // Capitalized words
+    /([a-z]+(?:\s+[a-z]+)*)/g, // Lowercase words
+    /([A-Z]+(?:\s+[A-Z]+)*)/g  // ALL CAPS words
+  ];
+  
+  const intolerances = [];
+  
+  intolerancePatterns.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      matches.forEach(match => {
+        const cleanMatch = match.trim();
+        if (cleanMatch.length > 2 && cleanMatch.length < 50) {
+          // Filter out common non-intolerance words
+          const excludeWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
+          if (!excludeWords.includes(cleanMatch.toLowerCase())) {
+            intolerances.push(cleanMatch);
+          }
+        }
+      });
+    }
+  });
+  
+  return [...new Set(intolerances)]; // Remove duplicates
+}
+
+// Extract intolerances from 5Strands PDF text
+function extractIntolerancesFrom5StrandsPDF(text) {
+  const intolerances = [];
+  
+  // Regular expression to match intolerances in 5Strands format
+  const intolerancePattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g;
+  
+  const matches = text.match(intolerancePattern);
+  if (matches) {
+    matches.forEach(match => {
+      const cleanMatch = match.trim();
+      if (cleanMatch.length > 2 && cleanMatch.length < 50) {
+        // Filter out common non-intolerance words
+        const excludeWords = ['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'];
+        if (!excludeWords.includes(cleanMatch.toLowerCase())) {
+          intolerances.push(cleanMatch);
+        }
+      }
+    });
+  }
+  
+  return [...new Set(intolerances)]; // Remove duplicates
+}
+
+// Toggle example profiles visibility
+function toggleExampleProfiles() {
+  const exampleProfiles = ['donProfile', 'loraProfile', 'mochaProfile', 'punkinProfile'];
+  const toggleBtn = document.getElementById('toggleExampleProfiles');
+  
+  // Check if profiles are currently visible
+  const firstProfile = document.getElementById('donProfile');
+  const isVisible = firstProfile.style.display !== 'none';
+  
+  if (isVisible) {
+    // Hide example profiles
+    exampleProfiles.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) element.style.display = 'none';
+    });
+    toggleBtn.textContent = '👥 Show Example Profiles';
+    
+    // If an example profile was selected, switch to user profile or create one
+    if (['Don', 'Lora', 'Mocha', 'Punkin'].includes(currentPet)) {
+      if (userIntolerances.length > 0) {
+        selectPet(currentProfileName);
+      } else {
+        // Show onboarding to create a profile
+        showOnboarding();
+      }
+    }
+  } else {
+    // Show example profiles
+    exampleProfiles.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) element.style.display = 'block';
+    });
+    toggleBtn.textContent = '👥 Hide Example Profiles';
+  }
+  
+  // Save preference to localStorage
+  safeStorage.setItem("myDNADiet_showExampleProfiles", (!isVisible).toString());
+}
+
+// Initialize example profiles visibility based on user preference
+function initializeExampleProfilesVisibility() {
+  const showExamples = safeStorage.getItem("myDNADiet_showExampleProfiles");
+  
+  // By default, hide example profiles for new users (more user-focused)
+  if (showExamples === null || showExamples === 'false') {
+    const exampleProfiles = ['donProfile', 'loraProfile', 'mochaProfile', 'punkinProfile'];
+    exampleProfiles.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) element.style.display = 'none';
+    });
+    
+    const toggleBtn = document.getElementById('toggleExampleProfiles');
+    if (toggleBtn) toggleBtn.textContent = '👥 Show Example Profiles';
+  }
+}
+
+// Hide welcome message when user has a profile
+function hideWelcomeMessage() {
+  const welcomeMessage = document.getElementById('welcomeMessage');
+  if (welcomeMessage) {
+    welcomeMessage.style.display = 'none';
+  }
+}
+
+// Show welcome message if user has no profile
+function showWelcomeMessage() {
+  const welcomeMessage = document.getElementById('welcomeMessage');
+  if (welcomeMessage && userIntolerances.length === 0) {
+    welcomeMessage.style.display = 'block';
+  }
+}
+
+// Debug function to help troubleshoot issues
+function showDebugInfo() {
+  const debugInfo = document.getElementById('debugInfo');
+  if (debugInfo) {
+    let debugHTML = '<strong>Debug Information:</strong><br><br>';
+    
+    debugHTML += `• Current Pet: ${currentPet}<br>`;
+    debugHTML += `• Current Profile Name: ${currentProfileName}<br>`;
+    debugHTML += `• User Intolerances Count: ${userIntolerances.length}<br>`;
+    debugHTML += `• All Profiles: ${Object.keys(intolerances).join(', ')}<br>`;
+    debugHTML += `• localStorage Keys: ${safeStorage.getAppKeys().join(', ')}<br><br>`;
+    
+    // Show localStorage content
+    debugHTML += '<strong>localStorage Content:</strong><br>';
+    safeStorage.getAppKeys().forEach(key => {
+      try {
+        const value = safeStorage.getItem(key);
+        debugHTML += `• ${key}: ${value ? value.substring(0, 100) + '...' : 'null'}<br>`;
+      } catch (error) {
+        debugHTML += `• ${key}: Error reading - ${error.message}<br>`;
+      }
+    });
+    
+    debugInfo.innerHTML = debugHTML;
+    debugInfo.style.display = 'block';
+  }
+}
+
+// Enhanced error handling for file uploads
+function handleFileUploadError(error, fileName) {
+  console.error(`Error processing ${fileName}:`, error);
+  
+  let userMessage = "An error occurred while processing your file. ";
+  
+  if (error.message.includes('PDF')) {
+    userMessage += "This might not be a valid PDF file or it may be password-protected.";
+  } else if (error.message.includes('CSV')) {
+    userMessage += "Please check that your CSV file is properly formatted.";
+  } else if (error.message.includes('DOCX')) {
+    userMessage += "This might not be a valid Word document.";
+  } else {
+    userMessage += "Please try a different file or contact support if the problem persists.";
+  }
+  
+  showUploadStatus(userMessage, "error");
+}

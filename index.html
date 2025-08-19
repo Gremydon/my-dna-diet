@@ -41,6 +41,14 @@
       gap: 10px;
       margin-bottom: 20px;
     }
+    .profile-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      max-width: 300px;
+      justify-content: center;
+    }
     .pet-button {
       padding: 10px 20px;
       border: none;
@@ -50,10 +58,29 @@
       color: #fff;
       cursor: pointer;
       transition: background-color 0.3s;
+      flex: 1;
+      max-width: 200px;
     }
     .pet-button.active {
       background-color: #fff;
       color: #4b0082;
+    }
+    .remove-profile {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.3s;
+    }
+    .remove-profile:hover {
+      background-color: #c82333;
     }
     .clear-button {
       background-color: #d96fd6;
@@ -200,24 +227,45 @@
     <!-- Login section removed - no authentication required -->
 
     <div id="app-content">
+      <!-- Welcome message for new users -->
+      <div id="welcomeMessage" class="section" style="text-align: center; background: linear-gradient(135deg, #e8f5e8, #f0f8ff); border: 2px solid #4caf50; margin-bottom: 25px;">
+        <h3 style="margin: 0 0 15px 0; color: #1976d2;">🚀 Welcome to My DNA Diet!</h3>
+        <p style="margin: 0 0 15px 0; color: #1565c0; font-size: 16px;">
+          Upload your 5Strands report, DNA test results, or create a custom profile to start scanning food labels!
+        </p>
+        <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+          <button onclick="showOnboarding()" style="background-color: #4b0082; color: white; border: none; border-radius: 8px; padding: 12px 20px; cursor: pointer; font-size: 14px;">
+            🧬 Create My Profile
+          </button>
+          <button onclick="openUploadModal()" style="background-color: #28a745; color: white; border: none; border-radius: 8px; padding: 12px 20px; cursor: pointer; font-size: 14px;">
+            📤 Upload 5Strands Report
+          </button>
+        </div>
+      </div>
       <div id="petSelector" class="pet-selector">
-        <div class="profile-item">
+        <div class="profile-item" id="donProfile">
           <button class="pet-button" onclick="selectPet('Don')">🧔 Don</button>
           <button class="remove-profile" onclick="removeProfile('Don')" title="Remove Don's profile">❌</button>
         </div>
-        <div class="profile-item">
+        <div class="profile-item" id="loraProfile">
           <button class="pet-button" onclick="selectPet('Lora')">👩 Lora</button>
           <button class="remove-profile" onclick="removeProfile('Lora')" title="Remove Lora's profile">❌</button>
         </div>
-        <div class="profile-item">
+        <div class="profile-item" id="mochaProfile">
           <button class="pet-button" onclick="selectPet('Mocha')">🐶 Mocha</button>
           <button class="remove-profile" onclick="removeProfile('Mocha')" title="Remove Mocha's profile">❌</button>
         </div>
-        <div class="profile-item">
+        <div class="profile-item" id="punkinProfile">
           <button class="pet-button" onclick="selectPet('Punkin')">🐶 Punkin</button>
           <button class="remove-profile" onclick="removeProfile('Punkin')" title="Remove Punkin's profile">❌</button>
         </div>
         <button id="userProfileBtn" class="pet-button" onclick="selectPet('My Profile')" style="display: none;">👤 My Profile</button>
+        
+        <div style="margin-top: 15px; text-align: center;">
+          <button id="toggleExampleProfiles" onclick="toggleExampleProfiles()" style="background-color: #6c757d; color: white; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 12px;">
+            👥 Show/Hide Example Profiles
+          </button>
+        </div>
       </div>
 
       <div class="button-row">
@@ -226,7 +274,7 @@
         <button class="scan-btn" onclick="openScanModal()">📸 Scan</button>
         <button class="diet-btn" onclick="openDietPlanModal()">My Diet Plan 📋</button>
         <button class="upload-btn" onclick="openUploadModal()">📤 Upload Intolerances</button>
-        <button class="help-btn" onclick="showOnboarding()">❓ Help</button>
+        <button class="help-btn" onclick="showOnboarding()">❓ Create Profile</button>
         <button class="terms-btn" onclick="viewTerms()">📜 Terms</button>
       </div>
 
@@ -307,20 +355,34 @@
           <p>Upload various file types to add your intolerance data:</p>
           
           <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-            <h4 style="margin: 0 0 10px 0; color: #495057;">📁 File Upload (JSON Only)</h4>
+            <h4 style="margin: 0 0 10px 0; color: #495057;">📁 File Upload - Multiple Formats Supported</h4>
             <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #28a745;">
               <strong>📄 JSON</strong><br>
               <small>Direct intolerance data import</small>
+            </div>
+            <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #17a2b8; margin-top: 8px;">
+              <strong>📊 CSV/Excel</strong><br>
+              <small>Spreadsheet data from 5Strands or other sources</small>
+            </div>
+            <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #6f42c1; margin-top: 8px;">
+              <strong>📋 PDF</strong><br>
+              <small>5Strands reports and other PDF documents</small>
+            </div>
+            <div style="background: white; padding: 10px; border-radius: 6px; border-left: 4px solid #fd7e14; margin-top: 8px;">
+              <strong>📝 TXT/DOCX</strong><br>
+              <small>Text documents and Word files</small>
             </div>
           </div>
           
           <div style="margin-bottom: 10px;">
             <a href="sample-intolerances-template.json" download style="color: #007bff; text-decoration: none;">📥 Download Sample JSON Template</a>
+            <span style="margin: 0 10px;">|</span>
+            <a href="sample-ingredients-template.csv" download style="color: #007bff; text-decoration: none;">📥 Download Sample CSV Template</a>
           </div>
           
-          <input type="file" id="fileUpload" accept=".json" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
+          <input type="file" id="fileUpload" accept=".json,.pdf,.docx,.txt,.csv,.xlsx,.xls" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
           <div style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;">
-            💡 Currently supporting JSON files only. Other file types will be re-enabled soon!
+            💡 Now supporting: JSON, PDF, CSV, Excel, TXT, DOCX files! Perfect for 5Strands reports.
           </div>
           <button onclick="processUploadedFile()" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer;">📤 Process File</button>
           
