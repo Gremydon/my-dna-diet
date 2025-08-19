@@ -1151,48 +1151,43 @@ let currentProfileName = "My Profile";
 // Setup upload modal event listeners
 function setupUploadModalListeners() {
   document.getElementById("closeUpload").addEventListener("click", closeUploadModal);
-  
-  // Add file input change listener for all supported file types
-  const fileInput = document.getElementById("fileUpload");
-  if (fileInput) {
-    fileInput.addEventListener("change", function(e) {
-      const file = e.target.files[0];
-      if (file) {
-        console.log("File input change event triggered");
-        console.log("Selected file:", file.name);
-        console.log("File type:", file.type);
-        console.log("File size:", file.size);
-        console.log("File extension:", file.name.split('.').pop().toLowerCase());
-        
-        // Show immediate feedback for all supported file types
-        const statusDiv = document.getElementById("uploadStatus");
-        if (statusDiv) {
-          const fileName = file.name;
-          const fileExt = fileName.split('.').pop().toLowerCase();
-          const supportedFormats = ['.json', '.csv', '.pdf', '.xlsx', '.xls', '.txt', '.doc', '.docx'];
-          
-          if (supportedFormats.includes('.' + fileExt)) {
-            statusDiv.style.display = "block";
-            statusDiv.style.backgroundColor = "#17a2b8";
-            statusDiv.style.color = "white";
-            statusDiv.style.padding = "10px";
-            statusDiv.style.borderRadius = "6px";
-            statusDiv.textContent = `File selected: ${fileName} (${fileExt.toUpperCase()})`;
-          } else {
-            statusDiv.style.display = "block";
-            statusDiv.style.backgroundColor = "#ffc107";
-            statusDiv.style.color = "black";
-            statusDiv.style.padding = "10px";
-            statusDiv.style.borderRadius = "6px";
-            statusDiv.textContent = `Unsupported file type. Please select: JSON, CSV, PDF, Excel, TXT, DOC, or DOCX files.`;
-            // Clear the file input for unsupported files
-            fileInput.value = "";
-          }
-        }
-      }
-    });
-  }
 }
+
+// Handle file upload and save intolerance list to selected profile
+document.getElementById("intolerance-upload").addEventListener("change", function (event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const allowedTypes = ["application/json"];
+    if (!allowedTypes.includes(file.type)) {
+        alert("❌ Only .json files are supported in this patch.");
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        try {
+            const data = JSON.parse(e.target.result);
+            const intoleranceList = Object.keys(data); // or customize if structure is different
+
+            const currentProfile = localStorage.getItem("myDNADiet_lastActiveProfile") || "Don";
+            const profileKey = `myDNADiet_${currentProfile}_intolerances`;
+
+            localStorage.setItem(profileKey, JSON.stringify(intoleranceList));
+
+            // Update the UI or debug info
+            document.getElementById("debug-info").textContent =
+                `✅ Uploaded ${intoleranceList.length} intolerances for ${currentProfile}`;
+            console.log(`Stored for profile ${currentProfile}:`, intoleranceList);
+
+            alert(`✅ ${intoleranceList.length} intolerances uploaded for ${currentProfile}.`);
+        } catch (err) {
+            alert("❌ Error reading the file. Please ensure it's a valid JSON format.");
+            console.error(err);
+        }
+    };
+    reader.readAsText(file);
+});
 
 // Open upload modal
 function openUploadModal() {
@@ -1272,41 +1267,9 @@ function removeIntoleranceItem(index) {
 
 // Process uploaded file based on type
 function processUploadedFile() {
-  const fileInput = document.getElementById("fileUpload");
-  const file = fileInput.files[0];
-  const statusDiv = document.getElementById("uploadStatus");
-  
-  if (!file) {
-    showUploadStatus("Please select a file", "error");
-    return;
-  }
-  
-  const fileType = file.type;
-  const fileName = file.name.toLowerCase();
-  
-  // Debug information
-  console.log("File selected:", file.name);
-  console.log("File type:", fileType);
-  console.log("File size:", file.size);
-  
-  showUploadStatus("Processing file...", "info");
-  
-  // Determine file type and process accordingly
-  if (fileName.endsWith('.json')) {
-    processJSONFile(file);
-  } else if (fileName.endsWith('.csv') || fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-    processCSVFile(file);
-  } else if (fileName.endsWith('.pdf')) {
-    processPDFFile(file);
-  } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
-    processDocxFile(file);
-  } else if (fileName.endsWith('.txt')) {
-    processTextFile(file);
-  } else {
-    showUploadStatus("Unsupported file type. Please use JSON, CSV, Excel, PDF, DOC, DOCX, or TXT files.", "error");
-    // Clear the file input
-    fileInput.value = "";
-  }
+    // This function is now handled by the intolerance-upload event listener
+    // Keeping it for backward compatibility but it's no longer needed
+    console.log("processUploadedFile called - now handled by intolerance-upload event listener");
 }
 
 // Show upload status with styling
