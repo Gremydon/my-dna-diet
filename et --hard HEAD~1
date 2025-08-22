@@ -1,0 +1,2 @@
+[33m8e02475[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m  REPLACE: Simplified upload handling with new intolerance-upload system
+[33m9e5dbd4[m  BUG FIX: Remove 'JSON only' restriction from file upload UI

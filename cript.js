@@ -14,3 +14,5 @@ warning: in the working copy of 'script.js', LF will be replaced by CRLF the nex
      // Remove single characters that are likely OCR errors[m
      .replace(/\b[a-z]\b/g, '')[m
      // Remove multiple commas[m
+[33m964a013[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m  COMPREHENSIVE UPDATE: Restore Full Multi-Format File Upload Support with Profile Integration
+[33m8e02475[m  REPLACE: Simplified upload handling with new intolerance-upload system

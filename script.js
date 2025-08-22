@@ -117,6 +117,559 @@ let currentOnboardingStep = 1;
 let selectedOnboardingOption = null;
 let onboardingIntolerances = [];
 
+// ===== PROFILE MANAGEMENT SYSTEM =====
+
+// global-ish state
+let currentProfile = null;
+let profileData = JSON.parse(localStorage.getItem("profileData") || "{}");
+
+function saveAllProfiles() {
+  localStorage.setItem("profileData", JSON.stringify(profileData));
+}
+
+function setCurrentProfile(name) {
+  currentProfile = name;
+  localStorage.setItem("currentProfile", name);
+  renderActiveProfile();
+}
+
+function renderActiveProfile() {
+  // Update the UI to show the active profile
+  if (currentProfile) {
+    console.log("✅ Active profile set to:", currentProfile);
+    
+    // Update profile display in the UI
+    const profileDisplay = document.getElementById("activeProfileDisplay");
+    if (profileDisplay) {
+      profileDisplay.textContent = `Active Profile: ${currentProfile}`;
+      profileDisplay.style.display = "block";
+    }
+    
+    // You can add more UI updates here to show which profile is active
+  }
+}
+
+// Get the current active profile
+function getCurrentProfile() {
+  return currentProfile;
+}
+
+// Get all profile names
+function getAllProfileNames() {
+  return Object.keys(profileData);
+}
+
+// Check if a profile exists
+function profileExists(name) {
+  return profileData.hasOwnProperty(name);
+}
+
+// Delete a profile
+function deleteProfile(name) {
+  if (profileData[name]) {
+    delete profileData[name];
+    saveAllProfiles();
+    console.log("✅ Deleted profile:", name);
+    
+    // If this was the current profile, clear it
+    if (currentProfile === name) {
+      currentProfile = null;
+      localStorage.removeItem("currentProfile");
+    }
+    
+    return true;
+  }
+  return false;
+}
+
+// Get profile data
+function getProfileData(name) {
+  return profileData[name] || null;
+}
+
+// Update profile data
+function updateProfileData(name, data) {
+  if (profileData[name]) {
+    profileData[name] = { ...profileData[name], ...data, lastUpdated: Date.now() };
+    saveAllProfiles();
+    console.log("✅ Updated profile data for:", name);
+    return true;
+  }
+  return false;
+}
+
+function createProfile() {
+  const input = document.getElementById("profileNameInput"); // <input id="profileNameInput" />
+  const name  = (input?.value || "").trim();
+
+  if (!name) {
+    alert("Please enter a profile name.");
+    return;
+  }
+
+  // If it doesn't exist, create a clean shell
+  if (!profileData[name]) {
+    profileData[name] = {
+      intolerances: [],
+      createdAt: Date.now(),
+    };
+  }
+
+  saveAllProfiles();
+  setCurrentProfile(name);
+  input.value = "";
+}
+
+// If you previously stored profiles using keys that start with inbound, run this one-time cleanup to migrate them:
+(function migrateInboundKeys() {
+  const keys = Object.keys(profileData);
+  let changed = false;
+  for (const k of keys) {
+    if (k.startsWith("inbound") && profileData[k]?.displayName) {
+      const pretty = profileData[k].displayName.trim();
+      if (pretty && !profileData[pretty]) {
+        profileData[pretty] = { ...profileData[k] };
+        delete profileData[k];
+        changed = true;
+      }
+    }
+  }
+  if (changed) saveAllProfiles();
+})();
+
+// Load the current profile on app startup
+function loadCurrentProfile() {
+  const storedProfile = localStorage.getItem("currentProfile");
+  if (storedProfile && profileData[storedProfile]) {
+    currentProfile = storedProfile;
+    console.log("✅ Loaded current profile from storage:", currentProfile);
+    renderActiveProfile();
+  }
+}
+
+// Call this function to load the current profile
+loadCurrentProfile();
+
+// Export profile data as JSON
+function exportProfileData(profileName = null) {
+  const targetProfile = profileName || currentProfile;
+  if (!targetProfile || !profileData[targetProfile]) {
+    console.error("No profile data to export");
+    return null;
+  }
+  
+  const exportData = {
+    profileName: targetProfile,
+    data: profileData[targetProfile],
+    exportedAt: new Date().toISOString()
+  };
+  
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${targetProfile}_profile_data.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  console.log("✅ Exported profile data for:", targetProfile);
+  return exportData;
+}
+
+// Import profile data from JSON
+function importProfileData(jsonData) {
+  try {
+    const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+    
+    if (!data.profileName || !data.data) {
+      throw new Error("Invalid profile data format");
+    }
+    
+    const profileName = data.profileName.trim();
+    if (!profileName) {
+      throw new Error("Profile name cannot be empty");
+    }
+    
+    // Check if profile already exists
+    if (profileData[profileName]) {
+      if (!confirm(`Profile "${profileName}" already exists. Do you want to overwrite it?`)) {
+        return false;
+      }
+    }
+    
+    // Import the profile data
+    profileData[profileName] = {
+      ...data.data,
+      importedAt: new Date().toISOString(),
+      lastUpdated: new Date().toISOString()
+    };
+    
+    // Save to localStorage
+    saveAllProfiles();
+    
+    console.log("✅ Imported profile data for:", profileName);
+    return true;
+    
+  } catch (error) {
+    console.error("❌ Error importing profile data:", error);
+    alert("Error importing profile data: " + error.message);
+    return false;
+  }
+}
+
+// List all profiles with their information
+function listAllProfiles() {
+  const profiles = Object.keys(profileData);
+  if (profiles.length === 0) {
+    console.log("No profiles found");
+    return [];
+  }
+  
+  const profileList = profiles.map(name => ({
+    name: name,
+    intolerancesCount: profileData[name].intolerances ? profileData[name].intolerances.length : 0,
+    createdAt: profileData[name].createdAt,
+    lastUpdated: profileData[name].lastUpdated,
+    isActive: name === currentProfile
+  }));
+  
+  console.log("📋 Available profiles:", profileList);
+  return profileList;
+}
+
+// Clear all profiles (use with caution!)
+function clearAllProfiles() {
+  if (confirm("Are you sure you want to delete ALL profiles? This action cannot be undone!")) {
+    profileData = {};
+    currentProfile = null;
+    localStorage.removeItem("currentProfile");
+    saveAllProfiles();
+    console.log("🗑️ All profiles cleared");
+    return true;
+  }
+  return false;
+}
+
+// Backup all profile data
+function backupAllProfiles() {
+  const backupData = {
+    profiles: profileData,
+    currentProfile: currentProfile,
+    backupCreatedAt: new Date().toISOString(),
+    version: "1.0"
+  };
+  
+  const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `profile_backup_${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  console.log("✅ Profile backup created");
+  return backupData;
+}
+
+// Restore profile data from backup
+function restoreFromBackup(backupData) {
+  try {
+    const data = typeof backupData === 'string' ? JSON.parse(backupData) : backupData;
+    
+    if (!data.profiles || !data.version) {
+      throw new Error("Invalid backup format");
+    }
+    
+    if (confirm("This will overwrite all current profiles. Are you sure you want to continue?")) {
+      profileData = data.profiles;
+      currentProfile = data.currentProfile;
+      
+      // Save to localStorage
+      saveAllProfiles();
+      if (currentProfile) {
+        localStorage.setItem("currentProfile", currentProfile);
+      }
+      
+      console.log("✅ Profiles restored from backup");
+      return true;
+    }
+    
+    return false;
+    
+  } catch (error) {
+    console.error("❌ Error restoring from backup:", error);
+    alert("Error restoring from backup: " + error.message);
+    return false;
+  }
+}
+
+// Get profile statistics
+function getProfileStats() {
+  const profiles = Object.keys(profileData);
+  const totalProfiles = profiles.length;
+  let totalIntolerances = 0;
+  let activeProfile = null;
+  
+  profiles.forEach(name => {
+    if (profileData[name].intolerances) {
+      totalIntolerances += profileData[name].intolerances.length;
+    }
+    if (name === currentProfile) {
+      activeProfile = name;
+    }
+  });
+  
+  const stats = {
+    totalProfiles,
+    totalIntolerances,
+    activeProfile,
+    averageIntolerancesPerProfile: totalProfiles > 0 ? Math.round(totalIntolerances / totalProfiles) : 0,
+    profilesWithIntolerances: profiles.filter(name => profileData[name].intolerances && profileData[name].intolerances.length > 0).length
+  };
+  
+  console.log("📊 Profile Statistics:", stats);
+  return stats;
+}
+
+// Validate profile data integrity
+function validateProfileData() {
+  const profiles = Object.keys(profileData);
+  const issues = [];
+  
+  profiles.forEach(name => {
+    const profile = profileData[name];
+    
+    // Check if profile has required fields
+    if (!profile.intolerances) {
+      issues.push(`Profile "${name}" is missing intolerances array`);
+    } else if (!Array.isArray(profile.intolerances)) {
+      issues.push(`Profile "${name}" has invalid intolerances format`);
+    }
+    
+    // Check if profile has creation date
+    if (!profile.createdAt) {
+      issues.push(`Profile "${name}" is missing creation date`);
+    }
+    
+    // Check for duplicate profile names
+    const duplicateNames = profiles.filter(p => p === name);
+    if (duplicateNames.length > 1) {
+      issues.push(`Duplicate profile name found: "${name}"`);
+    }
+  });
+  
+  if (issues.length === 0) {
+    console.log("✅ Profile data validation passed");
+    return { valid: true, issues: [] };
+  } else {
+    console.warn("⚠️ Profile data validation issues found:", issues);
+    return { valid: false, issues };
+  }
+}
+
+// Repair profile data issues
+function repairProfileData() {
+  const profiles = Object.keys(profileData);
+  let repaired = 0;
+  
+  profiles.forEach(name => {
+    const profile = profileData[name];
+    let needsRepair = false;
+    
+    // Fix missing intolerances array
+    if (!profile.intolerances || !Array.isArray(profile.intolerances)) {
+      profile.intolerances = [];
+      needsRepair = true;
+    }
+    
+    // Fix missing creation date
+    if (!profile.createdAt) {
+      profile.createdAt = Date.now();
+      needsRepair = true;
+    }
+    
+    // Fix missing last updated date
+    if (!profile.lastUpdated) {
+      profile.lastUpdated = Date.now();
+      needsRepair = true;
+    }
+    
+    if (needsRepair) {
+      repaired++;
+    }
+  });
+  
+  if (repaired > 0) {
+    saveAllProfiles();
+    console.log(`🔧 Repaired ${repaired} profile(s)`);
+  } else {
+    console.log("✅ No profile repairs needed");
+  }
+  
+  return repaired;
+}
+
+// Search profiles by name or intolerance
+function searchProfiles(query) {
+  if (!query || query.trim().length === 0) {
+    return Object.keys(profileData);
+  }
+  
+  const searchTerm = query.toLowerCase().trim();
+  const results = [];
+  
+  Object.keys(profileData).forEach(name => {
+    const profile = profileData[name];
+    
+    // Search by profile name
+    if (name.toLowerCase().includes(searchTerm)) {
+      results.push({ name, matchType: 'name', relevance: 1 });
+      return;
+    }
+    
+    // Search by intolerance items
+    if (profile.intolerances && Array.isArray(profile.intolerances)) {
+      profile.intolerances.forEach(item => {
+        if (item.item && item.item.toLowerCase().includes(searchTerm)) {
+          results.push({ name, matchType: 'intolerance', relevance: 0.8, matchedItem: item.item });
+          return;
+        }
+      });
+    }
+  });
+  
+  // Remove duplicates and sort by relevance
+  const uniqueResults = results.filter((result, index, self) => 
+    index === self.findIndex(r => r.name === result.name)
+  );
+  
+  uniqueResults.sort((a, b) => b.relevance - a.relevance);
+  
+  console.log(`🔍 Search results for "${query}":`, uniqueResults);
+  return uniqueResults;
+}
+
+// Merge two profiles
+function mergeProfiles(sourceProfileName, targetProfileName) {
+  if (!profileData[sourceProfileName] || !profileData[targetProfileName]) {
+    console.error("One or both profiles do not exist");
+    return false;
+  }
+  
+  if (sourceProfileName === targetProfileName) {
+    console.error("Cannot merge profile with itself");
+    return false;
+  }
+  
+  const sourceProfile = profileData[sourceProfileName];
+  const targetProfile = profileData[targetProfileName];
+  
+  // Merge intolerances
+  const mergedIntolerances = [...(targetProfile.intolerances || [])];
+  
+  if (sourceProfile.intolerances && Array.isArray(sourceProfile.intolerances)) {
+    sourceProfile.intolerances.forEach(item => {
+      // Check if intolerance already exists
+      const exists = mergedIntolerances.some(existing => 
+        existing.item && existing.item.toLowerCase() === item.item.toLowerCase()
+      );
+      
+      if (!exists) {
+        mergedIntolerances.push(item);
+      }
+    });
+  }
+  
+  // Update target profile with merged data
+  targetProfile.intolerances = mergedIntolerances;
+  targetProfile.lastUpdated = Date.now();
+  targetProfile.mergedFrom = sourceProfileName;
+  targetProfile.mergedAt = Date.now();
+  
+  // Delete source profile
+  delete profileData[sourceProfileName];
+  
+  // Save changes
+  saveAllProfiles();
+  
+  console.log(`✅ Merged profile "${sourceProfileName}" into "${targetProfileName}"`);
+  return true;
+}
+
+// Duplicate a profile
+function duplicateProfile(profileName, newName) {
+  if (!profileData[profileName]) {
+    console.error("Profile does not exist:", profileName);
+    return false;
+  }
+  
+  if (profileData[newName]) {
+    console.error("Profile with that name already exists:", newName);
+    return false;
+  }
+  
+  // Create a deep copy of the profile
+  const duplicatedProfile = JSON.parse(JSON.stringify(profileData[profileName]));
+  
+  // Update metadata
+  duplicatedProfile.createdAt = Date.now();
+  lastUpdated = Date.now();
+  duplicatedProfile.duplicatedFrom = profileName;
+  duplicatedProfile.duplicatedAt = Date.now();
+  
+  // Add the duplicated profile
+  profileData[newName] = duplicatedProfile;
+  
+  // Save to localStorage
+  saveAllProfiles();
+  
+  console.log(`✅ Duplicated profile "${profileName}" as "${newName}"`);
+  return true;
+}
+
+// Rename a profile
+function renameProfile(oldName, newName) {
+  if (!profileData[oldName]) {
+    console.error("Profile does not exist:", oldName);
+    return false;
+  }
+  
+  if (profileData[newName]) {
+    console.error("Profile with that name already exists:", newName);
+    return false;
+  }
+  
+  if (oldName === newName) {
+    console.error("New name is the same as old name");
+    return false;
+  }
+  
+  // Move the profile data to the new name
+  profileData[newName] = profileData[oldName];
+  delete profileData[oldName];
+  
+  // Update metadata
+  profileData[newName].lastUpdated = Date.now();
+  profileData[newName].renamedFrom = oldName;
+  profileData[newName].renamedAt = Date.now();
+  
+  // Update current profile if it was the renamed one
+  if (currentProfile === oldName) {
+    currentProfile = newName;
+    localStorage.setItem("currentProfile", newName);
+  }
+  
+  // Save to localStorage
+  saveAllProfiles();
+  
+  console.log(`✅ Renamed profile "${oldName}" to "${newName}"`);
+  return true;
+}
+
 // Show onboarding modal
 function showOnboarding() {
   document.getElementById("onboardingModal").style.display = "flex";
@@ -288,8 +841,17 @@ function createOnboardingProfile() {
     return;
   }
   
+  // Use the new Profile Management System
+  if (!profileData[profileName]) {
+    profileData[profileName] = {
+      intolerances: [],
+      createdAt: Date.now(),
+    };
+  }
+  
   // Set the profile name immediately
   currentProfileName = profileName;
+  currentProfile = profileName; // Also set the new currentProfile
   console.log("Setting profile name to:", currentProfileName);
   
   // Handle file upload if selected
@@ -336,11 +898,16 @@ function createOnboardingProfile() {
 
 // Complete onboarding profile creation
 function completeOnboardingProfile() {
-  // Save to localStorage
-  autoSaveIntolerances();
+  // Save to localStorage using the new Profile Management System
+  saveAllProfiles();
   
   // Add to main intolerances object with proper profile name
   intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+  
+  // Update profileData with the intolerances
+  if (profileData[currentProfileName]) {
+    profileData[currentProfileName].intolerances = userIntolerances;
+  }
   
   // Show user profile button
   showUserProfileButton();
@@ -1150,7 +1717,7 @@ function closeTermsModal() {
 
 let userIntolerances = [];
 let currentProfileName = "My Profile";
-let profileData = {}; // Store profile data with intolerances structure
+// profileData is now declared in the Profile Management System section above
 
 // Setup upload modal event listeners
 function setupUploadModalListeners() {
@@ -1749,7 +2316,12 @@ function autoSaveIntolerances() {
       // Add to main intolerances object with proper profile name
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
       
-      // Save all profiles to localStorage for persistence
+      // Update profileData with the new intolerances
+      if (profileData[currentProfileName]) {
+        profileData[currentProfileName].intolerances = userIntolerances;
+      }
+      
+      // Save all profiles to localStorage for persistence using the new system
       saveAllProfiles();
       
       // Show user profile button
@@ -1765,8 +2337,8 @@ function autoSaveIntolerances() {
 // Save all profiles to localStorage for persistence
 function saveAllProfiles() {
   try {
-    // Save the new profileData structure
-    safeStorage.setItem("myDNADiet_profileData", JSON.stringify(profileData));
+    // Save the new profileData structure using the Profile Management System
+    localStorage.setItem("profileData", JSON.stringify(profileData));
     
     // Also save the old format for backward compatibility
     const allProfiles = {
@@ -2891,15 +3463,28 @@ function handleFileUploadError(error, fileName) {
 // Load profileData from localStorage on app start
 function loadProfileDataFromStorage() {
   try {
-    const stored = safeStorage.getItem("myDNADiet_profileData");
+    // Try to load from the new Profile Management System first
+    const stored = localStorage.getItem("profileData");
     if (stored) {
       const data = JSON.parse(stored);
       if (data && typeof data === 'object') {
         profileData = data;
-        console.log("✅ Loaded profileData from storage:", Object.keys(profileData));
+        console.log("✅ Loaded profileData from Profile Management System:", Object.keys(profileData));
+      }
+    } else {
+      // Fallback to the old safeStorage system
+      const oldStored = safeStorage.getItem("myDNADiet_profileData");
+      if (oldStored) {
+        const data = JSON.parse(oldStored);
+        if (data && typeof data === 'object') {
+          profileData = data;
+          console.log("✅ Loaded profileData from safeStorage (legacy):", Object.keys(profileData));
+        }
       }
     }
   } catch (error) {
     console.error("❌ Error loading profileData from storage:", error);
   }
 }
+
+// Profile management functions are now defined in the Profile Management System section above
