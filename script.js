@@ -50,21 +50,19 @@ async function onProcessScanClick(evt) {
     const ingredients = parseIngredients(rawText);        // split, lowercase, strip punctuation, etc.
     console.log("[MyDNA] Parsed ingredients:", ingredients);
 
-    // 4) Cross-check against active profile intolerances
-    const prof = currentProfile || localStorage.getItem("currentProfile");
-    if (!prof || !profileData?.[prof]) throw new Error("No active profile selected.");
+    // 4) Cross-check against user's intolerances
+    if (userIntoleranceList.length === 0) throw new Error("No intolerances uploaded. Please upload your intolerance data first.");
 
-    const intolerances = (profileData[prof].intolerances || []).map(x => ("" + x).toLowerCase().trim());
+    const intolerances = userIntoleranceList.map(x => ("" + x).toLowerCase().trim());
     const matches = ingredients.filter(it => intolerances.includes(it));
     console.log("[MyDNA] Matches:", matches);
 
     // 5) Render results in UI (both list + counts), re-use your existing functions if you have them
-    renderScanResults({ profile: prof, ingredients, matches, rawText }); // implement to update the UI
-    renderIntolerances?.(); // optional refresh if your results live in that section
+    renderScanResults({ ingredients, matches, rawText }); // implement to update the UI
 
     // 6) Close modal + jump to results section
     hide(modal);                        // or modal.close() if <dialog>
-    toast(`Found ${matches.length} matches for ${prof}.`);
+    toast(`Found ${matches.length} intolerance(s) in this food.`);
     scrollToId("scanResults");          // scroll to results section
     // optional: briefly highlight results
     const res = document.getElementById("scanResults");
@@ -114,17 +112,17 @@ function parseIngredients(rawText) {
 }
 
 // Render scan results
-function renderScanResults({ profile, ingredients, matches, rawText }) {
+function renderScanResults({ ingredients, matches, rawText }) {
   const resultsContainer = document.getElementById("scanResults");
   if (!resultsContainer) return;
 
   resultsContainer.innerHTML = "";
 
-  // Add profile name display
-  const profileNameDiv = document.createElement("div");
-  profileNameDiv.style.cssText = "background: linear-gradient(135deg, #e8f5e8, #f0f8ff); padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border-left: 4px solid #4b0082;";
-  profileNameDiv.innerHTML = `<h4 style="margin: 0; color: #4b0082;">👤 Scan Results for: ${profile}</h4>`;
-  resultsContainer.appendChild(profileNameDiv);
+  // Add scan results header
+  const headerDiv = document.createElement("div");
+  headerDiv.style.cssText = "background: linear-gradient(135deg, #e8f5e8, #f0f8ff); padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border-left: 4px solid #4b0082;";
+  headerDiv.innerHTML = `<h4 style="margin: 0; color: #4b0082;">📸 Food Label Scan Results</h4>`;
+  resultsContainer.appendChild(headerDiv);
 
   // Add summary
   if (matches.length > 0) {
@@ -1299,46 +1297,10 @@ function renderIntolerances() {
   }
 }
 
-// Dynamic intolerance data loaded from JSON files
-let intolerances = {
-  Don: [],
-  Lora: [],
-  Mocha: [],
-  Punkin: []
-};
+// User intolerance data only - no test subjects
+let userIntoleranceList = [];
 
-// Load intolerance data from JSON files
-async function loadIntoleranceData() {
-  try {
-    const [donData, loraData, mochaData, punkinData] = await Promise.all([
-      fetch('don-data.json').then(res => res.json()),
-      fetch('lora-data.json').then(res => res.json()),
-      fetch('mocha-data.json').then(res => res.json()),
-      fetch('punkin-data.json').then(res => res.json())
-    ]);
-
-    // Extract item names from the intolerance arrays
-    intolerances.Don = donData.intolerances.map(item => item.item);
-    intolerances.Lora = loraData.intolerances.map(item => item.item);
-    intolerances.Mocha = mochaData.intolerances.map(item => item.item);
-    intolerances.Punkin = punkinData.intolerances.map(item => item.item);
-
-    console.log("✅ Intolerance data loaded successfully");
-    console.log("Don intolerances:", intolerances.Don.length, "items");
-    console.log("Lora intolerances:", intolerances.Lora.length, "items");
-    console.log("Mocha intolerances:", intolerances.Mocha.length, "items");
-    console.log("Punkin intolerances:", intolerances.Punkin.length, "items");
-  } catch (error) {
-    console.error("❌ Error loading intolerance data:", error);
-    // Fallback to static data if JSON loading fails
-    intolerances = {
-      Don: ["Hydrochloric Acid", "Monosodium Citrate", "Whey Protein", "Sodium Benzoate"],
-      Lora: ["Monopotassium Phosphate", "Whisky", "Gluten", "FD&C Red 40"],
-      Mocha: ["Chicken Byproduct", "Corn", "Beef", "Soy"],
-      Punkin: ["Salmon", "Lamb", "Barley", "Peanut Butter"]
-    };
-  }
-}
+// No need to load test subject data - users will upload their own
 
 // Get Shared Intolerances
 function getSharedIntolerances() {
@@ -2476,6 +2438,9 @@ function autoSaveIntolerances() {
       // Use safe storage wrapper to avoid conflicts with other apps
       safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
       
+      // Update the simple user intolerance list for scanning
+      userIntoleranceList = userIntolerances.map(item => item.item);
+      
       // Add to main intolerances object with proper profile name
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
       
@@ -2491,6 +2456,7 @@ function autoSaveIntolerances() {
       showUserProfileButton();
       
       console.log("✅ Auto-saved intolerances to localStorage for profile:", currentProfileName);
+      console.log("✅ Updated userIntoleranceList for scanning:", userIntoleranceList.length, "items");
     } catch (error) {
       console.error("❌ Error auto-saving intolerances:", error);
     }
@@ -2559,6 +2525,9 @@ function loadUserIntolerancesFromStorage() {
       userIntolerances = data.intolerances || [];
       currentProfileName = data.name || "My Profile";
       
+      // Update the simple user intolerance list for scanning
+      userIntoleranceList = userIntolerances.map(item => item.item);
+      
       // Add to main intolerances object with proper profile name
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
       
@@ -2566,6 +2535,7 @@ function loadUserIntolerancesFromStorage() {
       showUserProfileButton();
       
       console.log("✅ Loaded user intolerances from storage:", userIntolerances.length, "items for profile:", currentProfileName);
+      console.log("✅ Updated userIntoleranceList for scanning:", userIntoleranceList.length, "items");
       
       // If this is the first load and we have a user profile, select it by default
       if (userIntolerances.length > 0 && !safeStorage.getItem("myDNADiet_profileSelected")) {
