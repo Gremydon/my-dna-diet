@@ -1025,63 +1025,62 @@ function createOnboardingProfile() {
     return;
   }
   
+  // Check if user has selected a file (auto-detect option)
+  const fileInput = document.getElementById('onboardingFileInput');
+  const hasFile = fileInput && fileInput.files.length > 0;
+  
+  // If no option selected but file is present, auto-select file option
+  if (!selectedOnboardingOption && hasFile) {
+    selectedOnboardingOption = 'dna'; // Default to DNA test results
+  }
+  
   if (selectedOnboardingOption === 'manual' && onboardingIntolerances.length === 0) {
     alert("Please add at least one intolerance item");
     return;
   }
   
-  // Use the new Profile Management System
-  if (!profileData[profileName]) {
-    profileData[profileName] = {
-      intolerances: [],
-      createdAt: Date.now(),
-    };
-  }
-  
-  // Set the profile name immediately
+  // Update user intolerances directly (simplified system)
+  userIntolerances = [];
   currentProfileName = profileName;
-  currentProfile = profileName; // Also set the new currentProfile
+  currentProfile = profileName;
   console.log("Setting profile name to:", currentProfileName);
   
   // Handle file upload if selected
-  if (selectedOnboardingOption !== 'manual') {
-    const fileInput = document.getElementById('onboardingFileInput');
-    if (fileInput.files.length === 0) {
-      alert("Please select a file to upload");
+  if (selectedOnboardingOption !== 'manual' && hasFile) {
+    
+    // Process the file using our existing file processing functions
+    const file = fileInput.files[0];
+    
+    // Use the existing file processing logic
+    if (file.name.toLowerCase().endsWith('.json')) {
+      processJSONFile(file);
+    } else if (file.name.toLowerCase().endsWith('.pdf')) {
+      processPDFFile(file);
+    } else if (file.name.toLowerCase().endsWith('.csv') || file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')) {
+      processCSVFile(file);
+    } else if (file.name.toLowerCase().endsWith('.docx') || file.name.toLowerCase().endsWith('.doc')) {
+      processDocxFile(file);
+    } else if (file.name.toLowerCase().endsWith('.txt')) {
+      processTextFile(file);
+    } else {
+      alert("Unsupported file type. Please use JSON, PDF, CSV, Excel, TXT, DOC, or DOCX files.");
       return;
     }
     
-    // Process the file (this will be handled by the existing file processing logic)
-    const file = fileInput.files[0];
-    if (file.name.toLowerCase().endsWith('.json')) {
-      // Process JSON file
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        try {
-          const data = JSON.parse(e.target.result);
-          if (data.intolerances && Array.isArray(data.intolerances)) {
-            userIntolerances = data.intolerances;
-            // Profile name is already set above
-            completeOnboardingProfile();
-          } else {
-            alert("Invalid file format. Please use a valid intolerance data file.");
-          }
-        } catch (error) {
-          alert("Error reading file: " + error.message);
-        }
-      };
-      reader.readAsText(file);
-    } else {
-      // For other file types, we'll use the manual intolerances as a fallback
-      userIntolerances = onboardingIntolerances;
-      // Profile name is already set above
-      completeOnboardingProfile();
-    }
+    // Close the onboarding modal after processing
+    setTimeout(() => {
+      closeOnboarding();
+    }, 1000);
   } else {
-    // Manual entry
+    // Manual entry - use simplified system
     userIntolerances = onboardingIntolerances;
-    // Profile name is already set above
-    completeOnboardingProfile();
+    userIntoleranceList = onboardingIntolerances.map(item => item.item);
+    
+    // Save to localStorage
+    autoSaveIntolerances();
+    
+    // Close the onboarding modal
+    closeOnboarding();
   }
 }
 
