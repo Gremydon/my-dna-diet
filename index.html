@@ -373,7 +373,11 @@
             <a href="sample-ingredients-template.csv" download style="color: #007bff; text-decoration: none;">📥 Download Sample CSV Template</a>
           </div>
           
-          <input type="file" id="fileUpload" accept=".json,.csv,.pdf,.xlsx,.xls,.txt,.doc,.docx" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 10px;">
+          <div id="fileUploadArea" style="border: 2px dashed #ccc; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 10px; background: #f9f9f9;" 
+               ondrop="handleFileDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+            <p style="margin: 0 0 10px 0; color: #666;">📁 Drag and drop your file here, or click to browse</p>
+            <input type="file" id="fileUpload" accept=".json,.csv,.pdf,.xlsx,.xls,.txt,.doc,.docx" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ddd;">
+          </div>
           <div style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;">
             💡 Now supporting: JSON, PDF, CSV, Excel, TXT, DOCX files! Perfect for 5Strands reports.
           </div>

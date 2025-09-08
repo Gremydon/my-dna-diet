@@ -11,6 +11,34 @@ function toast(msg) {
   console.log("[MyDNA] " + msg); // replace with your toast system if you have one
 }
 
+// ===== DRAG AND DROP FUNCTIONS =====
+function handleDragOver(event) {
+  event.preventDefault();
+  event.currentTarget.style.borderColor = "#007bff";
+  event.currentTarget.style.backgroundColor = "#e3f2fd";
+}
+
+function handleDragLeave(event) {
+  event.preventDefault();
+  event.currentTarget.style.borderColor = "#ccc";
+  event.currentTarget.style.backgroundColor = "#f9f9f9";
+}
+
+function handleFileDrop(event) {
+  event.preventDefault();
+  event.currentTarget.style.borderColor = "#ccc";
+  event.currentTarget.style.backgroundColor = "#f9f9f9";
+  
+  const files = event.dataTransfer.files;
+  if (files.length > 0) {
+    const fileInput = document.getElementById("fileUpload");
+    fileInput.files = files;
+    
+    // Trigger the file processing
+    processUploadedFile();
+  }
+}
+
 // ===== SCAN PROCESSING FLOW =====
 let processingScan = false;
 
@@ -2055,24 +2083,18 @@ function processJSONFile(file) {
         return;
       }
       
-      // Get the currently selected profile
-      const currentProfile = currentPet || "Mocha";
+      // Update user intolerances directly
+      userIntolerances = validIntolerances;
+      currentProfileName = "My Profile";
       
-      // Store in profile data structure
-      if (!profileData) profileData = {};
-      if (!profileData[currentProfile]) profileData[currentProfile] = {};
-      profileData[currentProfile].intolerances = validIntolerances;
+      // Update the simple user intolerance list for scanning
+      userIntoleranceList = validIntolerances.map(item => item.item);
       
       // Save to localStorage
-      saveAllProfiles();
-      
-      // Update current intolerances for UI
-      userIntolerances = validIntolerances;
-      currentProfileName = currentProfile;
+      autoSaveIntolerances();
       
       // Refresh the UI
       loadCurrentIntolerances();
-      renderIntolerances();
       
       // Hide welcome message
       hideWelcomeMessage();
@@ -2080,7 +2102,7 @@ function processJSONFile(file) {
       // Clear file input
       document.getElementById("fileUpload").value = "";
       
-      showUploadStatus(`Successfully loaded ${validIntolerances.length} intolerance items from JSON file for ${currentProfile}`, "success");
+      showUploadStatus(`Successfully loaded ${validIntolerances.length} intolerance items from JSON file!`, "success");
       
     } catch (error) {
       showUploadStatus("Error reading JSON file: " + error.message, "error");
@@ -3145,9 +3167,6 @@ function processPDFFile(file) {
         console.log("🔍 PDF Parsing Result - Sample intolerances:", intolerances.slice(0, 10));
         
         if (intolerances.length > 0) {
-          // Get the currently selected profile
-          const currentProfile = currentPet || "Mocha";
-          console.log("🔍 PDF Processing - Current Profile:", currentProfile);
           console.log("🔍 PDF Processing - Extracted Intolerances Count:", intolerances.length);
           console.log("🔍 PDF Processing - Sample Intolerances:", intolerances.slice(0, 5));
           
@@ -3158,27 +3177,21 @@ function processPDFFile(file) {
             level: 2
           }));
           
-          // Store in profile data structure
-          if (!profileData) profileData = {};
-          if (!profileData[currentProfile]) profileData[currentProfile] = {};
-          profileData[currentProfile].intolerances = intoleranceData;
+          // Update user intolerances directly
+          userIntolerances = intoleranceData;
+          currentProfileName = "My Profile";
           
-          console.log("🔍 PDF Processing - Profile Data Structure:", profileData);
-          console.log("🔍 PDF Processing - Stored Intolerances for Profile:", profileData[currentProfile].intolerances.length);
+          // Update the simple user intolerance list for scanning
+          userIntoleranceList = intolerances;
           
           // Save to localStorage
-          saveAllProfiles();
-          
-          // Update current intolerances for UI
-          userIntolerances = intoleranceData;
-          currentProfileName = currentProfile;
+          autoSaveIntolerances();
           
           console.log("🔍 PDF Processing - Updated userIntolerances:", userIntolerances.length);
-          console.log("🔍 PDF Processing - Updated currentProfileName:", currentProfileName);
+          console.log("🔍 PDF Processing - Updated userIntoleranceList:", userIntoleranceList.length);
           
           // Refresh the UI
           loadCurrentIntolerances();
-          renderIntolerances();
           
           // Hide welcome message
           hideWelcomeMessage();
@@ -3186,12 +3199,7 @@ function processPDFFile(file) {
           // Clear file input
           document.getElementById("fileUpload").value = "";
           
-          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from PDF file for ${currentProfile}`, "success");
-          
-          // Debug: Verify profile data storage
-          setTimeout(() => {
-            verifyProfileDataStorage();
-          }, 1000);
+          showUploadStatus(`Successfully extracted ${intolerances.length} intolerance items from PDF file!`, "success");
         } else {
           showUploadStatus("No intolerance data found in the PDF. This might not be a 5Strands report or the format is different.", "warning");
         }
