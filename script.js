@@ -1,5 +1,168 @@
 // Firebase configuration removed - no authentication required
 
+// ===== GREMMY'S HELPER FUNCTIONS =====
+function show(el) { el?.classList.remove("hidden"); }
+function hide(el) { el?.classList.add("hidden"); }
+function scrollToId(id) {
+  const el = document.getElementById(id);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function toast(msg) {
+  console.log("[MyDNA] " + msg); // replace with your toast system if you have one
+}
+
+// ===== SCAN PROCESSING FLOW =====
+let processingScan = false;
+
+async function onProcessScanClick(evt) {
+  evt?.preventDefault?.();
+  if (processingScan) return;
+  processingScan = true;
+
+  const modal = document.getElementById("scannerModule");               // your modal wrapper
+  const processBtn = document.getElementById("processPhoto");          // the green button
+  const spinner = document.getElementById("scanSpinner");              // spinner element
+  const fileInput = document.getElementById("fileInput");              // <input type="file">
+  const cameraCanvas = document.getElementById("canvas");              // canvas where camera frame is drawn
+
+  modal?.classList.add("processing");
+  show(spinner);
+
+  try {
+    // 1) Get image: prefer canvas frame; fallback to file upload input
+    let imageBitmapOrBlob = null;
+    if (cameraCanvas && cameraCanvas.width > 0) {
+      imageBitmapOrBlob = cameraCanvas.toDataURL("image/png");
+    } else if (fileInput?.files?.[0]) {
+      imageBitmapOrBlob = fileInput.files[0];
+    } else {
+      throw new Error("No image available. Retake or choose a file.");
+    }
+
+    // 2) OCR
+    const rawText = await ocrExtract(imageBitmapOrBlob);  // <-- your Tesseract.js wrapper
+    if (!rawText || !rawText.trim()) {
+      throw new Error("Couldn't read any text from the label. Try retake with better lighting/focus.");
+    }
+    console.log("[MyDNA] OCR text:", rawText);
+
+    // 3) Normalize → ingredients
+    const ingredients = parseIngredients(rawText);        // split, lowercase, strip punctuation, etc.
+    console.log("[MyDNA] Parsed ingredients:", ingredients);
+
+    // 4) Cross-check against active profile intolerances
+    const prof = currentProfile || localStorage.getItem("currentProfile");
+    if (!prof || !profileData?.[prof]) throw new Error("No active profile selected.");
+
+    const intolerances = (profileData[prof].intolerances || []).map(x => ("" + x).toLowerCase().trim());
+    const matches = ingredients.filter(it => intolerances.includes(it));
+    console.log("[MyDNA] Matches:", matches);
+
+    // 5) Render results in UI (both list + counts), re-use your existing functions if you have them
+    renderScanResults({ profile: prof, ingredients, matches, rawText }); // implement to update the UI
+    renderIntolerances?.(); // optional refresh if your results live in that section
+
+    // 6) Close modal + jump to results section
+    hide(modal);                        // or modal.close() if <dialog>
+    toast(`Found ${matches.length} matches for ${prof}.`);
+    scrollToId("scanResults");          // scroll to results section
+    // optional: briefly highlight results
+    const res = document.getElementById("scanResults");
+    if (res) { res.classList.add("pulse"); setTimeout(()=>res.classList.remove("pulse"), 1500); }
+
+  } catch (err) {
+    console.error(err);
+    toast(err.message || "Processing failed.");
+  } finally {
+    hide(spinner);
+    modal?.classList.remove("processing");
+    processingScan = false;
+  }
+}
+
+// OCR extraction wrapper
+async function ocrExtract(imageData) {
+  try {
+    const { data: { text } } = await Tesseract.recognize(imageData, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const statusDiv = document.getElementById("scanStatus");
+          if (statusDiv) {
+            statusDiv.innerHTML = `<div style="color: #4b0082; font-weight: bold;">🔄 Processing... ${Math.round(m.progress * 100)}%</div>`;
+          }
+        }
+      }
+    });
+    return text;
+  } catch (error) {
+    console.error("OCR Error:", error);
+    throw new Error("OCR processing failed: " + error.message);
+  }
+}
+
+// Parse ingredients from OCR text
+function parseIngredients(rawText) {
+  if (!rawText || typeof rawText !== 'string') return [];
+  
+  return rawText
+    .toLowerCase()
+    .split(/[\n,;:()\[\]]+/) // Split on common separators
+    .map(item => item.trim())
+    .filter(item => item.length > 2) // Remove very short items
+    .filter(item => /^[a-z\s]+$/.test(item)) // Only letters and spaces
+    .filter(item => !['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'].includes(item)); // Remove common words
+}
+
+// Render scan results
+function renderScanResults({ profile, ingredients, matches, rawText }) {
+  const resultsContainer = document.getElementById("scanResults");
+  if (!resultsContainer) return;
+
+  resultsContainer.innerHTML = "";
+
+  // Add profile name display
+  const profileNameDiv = document.createElement("div");
+  profileNameDiv.style.cssText = "background: linear-gradient(135deg, #e8f5e8, #f0f8ff); padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border-left: 4px solid #4b0082;";
+  profileNameDiv.innerHTML = `<h4 style="margin: 0; color: #4b0082;">👤 Scan Results for: ${profile}</h4>`;
+  resultsContainer.appendChild(profileNameDiv);
+
+  // Add summary
+  if (matches.length > 0) {
+    const summaryDiv = document.createElement("div");
+    summaryDiv.style.cssText = "background-color: #ffcccc; color: red; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #dc3545;";
+    summaryDiv.innerHTML = `
+      <div style="font-size: 16px; margin-bottom: 5px;">⚠️ Found ${matches.length} intolerance(s)</div>
+      <div style="font-size: 14px; font-weight: normal;">${matches.join(', ')}</div>
+    `;
+    resultsContainer.appendChild(summaryDiv);
+  } else {
+    const summaryDiv = document.createElement("div");
+    summaryDiv.style.cssText = "background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #28a745;";
+    summaryDiv.innerHTML = `
+      <div style="font-size: 16px; margin-bottom: 5px;">✅ No intolerances found</div>
+      <div style="font-size: 14px; font-weight: normal;">Scanned ${ingredients.length} ingredients</div>
+    `;
+    resultsContainer.appendChild(summaryDiv);
+  }
+
+  // Add ingredients list
+  const ingredientsDiv = document.createElement("div");
+  ingredientsDiv.style.cssText = "background: white; border-radius: 8px; padding: 15px; margin: 15px 0;";
+  ingredientsDiv.innerHTML = `
+    <h4 style="margin: 0 0 10px 0; color: #333;">📋 Scanned Ingredients (${ingredients.length})</h4>
+    <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+      ${ingredients.map(ingredient => {
+        const isMatch = matches.includes(ingredient);
+        const style = isMatch ? 
+          "background: #ffcccc; color: red; padding: 4px 8px; border-radius: 4px; font-weight: bold;" :
+          "background: #f8f9fa; color: #666; padding: 4px 8px; border-radius: 4px;";
+        return `<span style="${style}">${ingredient}</span>`;
+      }).join('')}
+    </div>
+  `;
+  resultsContainer.appendChild(ingredientsDiv);
+}
+
 // Safe localStorage wrapper to prevent interference with other apps
 const safeStorage = {
   // Only allow operations on keys that start with our app prefix
@@ -1246,7 +1409,7 @@ function setupScannerEventListeners() {
   });
   document.getElementById("capturePhoto").addEventListener("click", captureImage);
   document.getElementById("retakePhoto").addEventListener("click", retakePhoto);
-  document.getElementById("processPhoto").addEventListener("click", processCapturedImage);
+  document.getElementById("processPhoto").addEventListener("click", onProcessScanClick);
   document.getElementById("fileInput").addEventListener("change", uploadImage);
   document.getElementById("closeScanner").addEventListener("click", closeScanModal);
   

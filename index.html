@@ -19,6 +19,15 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   </script>
   <style>
+    /* Gremmy's Helper CSS */
+    .hidden { display: none !important; }
+    .processing { opacity: 0.6; pointer-events: none; }
+    .pulse { animation: pulse 1.5s ease-in-out; }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
     body {
       margin: 0;
       font-family: "Segoe UI", sans-serif;
@@ -327,7 +336,9 @@
             <input type="file" id="fileInput" accept="image/*" style="padding: 8px; border: 2px dashed #ccc; border-radius: 8px; width: 100%; max-width: 300px;">
           </div>
           
-          <div id="scanStatus" style="text-align: center; padding: 10px; min-height: 20px;"></div>
+          <div id="scanStatus" style="text-align: center; padding: 10px; min-height: 20px;">
+            <div id="scanSpinner" class="hidden" style="color: #4b0082; font-weight: bold;">🔄 Processing...</div>
+          </div>
         </div>
       </div>
     </div>
