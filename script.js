@@ -1878,7 +1878,13 @@ let currentProfileName = "My Profile";
 
 // Setup upload modal event listeners
 function setupUploadModalListeners() {
-  document.getElementById("closeUpload").addEventListener("click", closeUploadModal);
+  const closeBtn = document.getElementById("closeUpload");
+  if (closeBtn) {
+    closeBtn.addEventListener("click", closeUploadModal);
+    console.log("✅ Close upload button event listener attached");
+  } else {
+    console.error("❌ Close upload button not found");
+  }
   
   // Add file input change listener for all supported file types
   const fileInput = document.getElementById("fileUpload");
@@ -1932,7 +1938,14 @@ function openUploadModal() {
 
 // Close upload modal
 function closeUploadModal() {
-  document.getElementById("uploadModal").style.display = "none";
+  console.log("🔍 closeUploadModal called");
+  const modal = document.getElementById("uploadModal");
+  if (modal) {
+    modal.style.display = "none";
+    console.log("✅ Upload modal closed");
+  } else {
+    console.error("❌ Upload modal not found");
+  }
 }
 
 // Load current intolerances into the modal
