@@ -2200,6 +2200,9 @@ function processDocxFile(file) {
             loadCurrentIntolerances();
             renderIntolerances();
             
+            // Show user profile button
+            showUserProfileButton();
+            
             // Hide welcome message
             hideWelcomeMessage();
             
@@ -2628,6 +2631,9 @@ function loadUserIntolerancesFromStorage() {
 // Show user profile button if user has intolerances
 function showUserProfileButton() {
   const userProfileBtn = document.getElementById("userProfileBtn");
+  console.log("🔍 showUserProfileButton called - userIntolerances.length:", userIntolerances.length);
+  console.log("🔍 showUserProfileButton called - currentProfileName:", currentProfileName);
+  
   if (userIntolerances.length > 0) {
     userProfileBtn.style.display = "inline-block";
     
@@ -2636,7 +2642,11 @@ function showUserProfileButton() {
     userProfileBtn.textContent = `👤 ${displayName}`;
     userProfileBtn.onclick = () => selectPet(displayName);
     
-    console.log("Updated user profile button to show:", displayName);
+    console.log("✅ Updated user profile button to show:", displayName);
+    console.log("✅ Button should now be visible in the UI");
+  } else {
+    console.log("❌ No user intolerances found, hiding profile button");
+    userProfileBtn.style.display = "none";
   }
 }
 
@@ -3221,6 +3231,9 @@ function processCSVFile(file) {
             loadCurrentIntolerances();
             renderIntolerances();
             
+            // Show user profile button
+            showUserProfileButton();
+            
             // Hide welcome message
             hideWelcomeMessage();
             
@@ -3306,6 +3319,9 @@ function processPDFFile(file) {
           
           // Refresh the UI
           loadCurrentIntolerances();
+          
+          // Show user profile button
+          showUserProfileButton();
           
           // Hide welcome message
           hideWelcomeMessage();
