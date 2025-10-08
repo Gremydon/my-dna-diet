@@ -267,8 +267,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     await loadIntoleranceData();
   }
   
-  // Load user intolerances from storage
-  loadUserIntolerancesFromStorage();
+  // Load user intolerances from storage - but only if no data in new system
+  if (userIntolerances.length === 0) {
+    loadUserIntolerancesFromStorage();
+  }
+  
+  // Migrate old data to new system if needed
+  migrateOldDataToNewSystem();
   
   // Show or hide welcome message based on profile status
   if (userIntolerances.length > 0) {
@@ -2478,6 +2483,9 @@ function autoSaveIntolerances() {
       
       console.log("✅ Auto-saved intolerances to localStorage for profile:", currentProfileName);
       console.log("✅ Updated userIntoleranceList for scanning:", userIntoleranceList.length, "items");
+      
+      // Show user notification
+      showDataSavedNotification();
     } catch (error) {
       console.error("❌ Error auto-saving intolerances:", error);
     }
@@ -2527,12 +2535,60 @@ function loadAllProfilesFromStorage() {
           if (profile.intolerances && Array.isArray(profile.intolerances)) {
             intolerances[profileName] = profile.intolerances;
             console.log("✅ Restored profile:", profileName, "with", profile.intolerances.length, "intolerances");
+            
+            // If this is a user profile, load it as the current profile
+            if (profile.type === "user") {
+              userIntolerances = profile.intolerances;
+              currentProfileName = profileName;
+              userIntoleranceList = profile.intolerances.map(item => item.item);
+              console.log("✅ Set as current user profile:", profileName);
+            }
           }
         });
       }
     }
   } catch (error) {
     console.error("❌ Error loading all profiles from storage:", error);
+  }
+}
+
+// Migrate old data to new system
+function migrateOldDataToNewSystem() {
+  try {
+    // Check if we have old data but no new data
+    const oldData = safeStorage.getItem("myDNADiet_userIntolerances");
+    if (oldData && userIntolerances.length === 0) {
+      const data = JSON.parse(oldData);
+      if (data.intolerances && data.intolerances.length > 0) {
+        console.log("🔄 Migrating old data to new system...");
+        
+        // Set the data
+        userIntolerances = data.intolerances;
+        currentProfileName = data.name || "My Profile";
+        userIntoleranceList = userIntolerances.map(item => item.item);
+        
+        // Add to new system
+        intolerances[currentProfileName] = userIntoleranceList;
+        
+        // Update profileData
+        if (!profileData[currentProfileName]) {
+          profileData[currentProfileName] = {
+            name: currentProfileName,
+            type: "user",
+            intolerances: userIntolerances,
+            lastUpdated: new Date().toISOString()
+          };
+        }
+        
+        // Save to new system
+        saveAllProfiles();
+        saveAllProfilesToStorage();
+        
+        console.log("✅ Migration complete! Moved", userIntolerances.length, "intolerances to new system");
+      }
+    }
+  } catch (error) {
+    console.error("❌ Error migrating old data:", error);
   }
 }
 
@@ -2586,6 +2642,65 @@ function showUserProfileButton() {
 
 // Call this function when the app loads
 loadUserIntolerancesFromStorage();
+
+// Show data saved notification
+function showDataSavedNotification() {
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #28a745, #20c997);
+    color: white;
+    padding: 15px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 10000;
+    font-weight: bold;
+    animation: slideInRight 0.3s ease-out;
+    max-width: 300px;
+  `;
+  
+  notification.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="font-size: 20px;">💾</span>
+      <div>
+        <div>Data Saved!</div>
+        <div style="font-size: 12px; opacity: 0.9; margin-top: 2px;">
+          Your profile will persist across sessions
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Add animation styles
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideInRight {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOutRight {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+  `;
+  document.head.appendChild(style);
+  
+  // Add to page
+  document.body.appendChild(notification);
+  
+  // Auto-remove after 3 seconds
+  setTimeout(() => {
+    notification.style.animation = 'slideOutRight 0.3s ease-in';
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 300);
+  }, 3000);
+}
 
 // Ensure profile name consistency on page load
 function ensureProfileNameConsistency() {
