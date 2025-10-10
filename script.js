@@ -1,3 +1,84 @@
+// GitHub OAuth Configuration
+const GITHUB_CLIENT_ID = 'your_github_client_id_here'; // You'll need to replace this with your actual GitHub OAuth App Client ID
+const GITHUB_REDIRECT_URI = window.location.origin + window.location.pathname;
+const GITHUB_SCOPE = 'gist,read:user'; // Minimal scopes - no email access
+const APP_VERSION = '1.0.0'; // Bump this to force client updates
+
+// Cloud Storage Configuration
+const GIST_FILENAME = 'profile.json';
+const GIST_DESCRIPTION = 'My DNA Diet - Personal Intolerance Profiles';
+
+// Data Minimization - Only sync what's absolutely necessary
+function toCloudProfile(profile) {
+  return {
+    version: 1,
+    name: String(profile?.name || "My Profile"),
+    intolerances: Array.isArray(profile?.intolerances) ? profile.intolerances.map(String) : [],
+    updatedAt: Date.now(),
+  };
+}
+
+// Safe logging that masks PII
+const DEBUG_SAFE = false; // Set to true only for debugging
+const safeLog = (...args) => { 
+  if (DEBUG_SAFE) console.log(...args); 
+};
+
+// Offline detection
+let isOnline = navigator.onLine;
+window.addEventListener('online', () => {
+  isOnline = true;
+  hideOfflineMessage();
+  safeLog('✅ Back online');
+  
+  // Auto-sync when back online if authenticated
+  if (isAuthenticated && userIntolerances.length > 0) {
+    setTimeout(async () => {
+      try {
+        await saveUserCloudData();
+        safeLog('✅ Auto-synced data when back online');
+      } catch (error) {
+        safeLog('⚠️ Auto-sync failed when back online:', error);
+      }
+    }, 1000); // Small delay to ensure connection is stable
+  }
+});
+window.addEventListener('offline', () => {
+  isOnline = false;
+  showOfflineMessage();
+  safeLog('⚠️ Gone offline');
+});
+
+// Show offline message
+function showOfflineMessage() {
+  let offlineBanner = document.getElementById('offlineBanner');
+  if (!offlineBanner) {
+    offlineBanner = document.createElement('div');
+    offlineBanner.id = 'offlineBanner';
+    offlineBanner.style.cssText = `
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: #ffc107; color: #000; text-align: center; padding: 8px;
+      font-size: 14px; font-weight: bold;
+    `;
+    offlineBanner.innerHTML = '🛰️ Offline—saving locally; will sync when online.';
+    document.body.appendChild(offlineBanner);
+  }
+  offlineBanner.style.display = 'block';
+}
+
+// Hide offline message
+function hideOfflineMessage() {
+  const offlineBanner = document.getElementById('offlineBanner');
+  if (offlineBanner) {
+    offlineBanner.style.display = 'none';
+  }
+}
+
+// Authentication state
+let isAuthenticated = false;
+let currentUser = null;
+let userGistId = null;
+
 // Firebase configuration removed - no authentication required
 
 // ===== GREMMY'S HELPER FUNCTIONS =====
@@ -9,6 +90,476 @@ function scrollToId(id) {
 }
 function toast(msg) {
   console.log("[MyDNA] " + msg); // replace with your toast system if you have one
+}
+
+// ===== GITHUB DEVICE FLOW AUTHENTICATION =====
+async function loginWithGitHub() {
+  try {
+    // Start device flow
+    const response = await fetch('https://github.com/login/device/code', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        client_id: GITHUB_CLIENT_ID,
+        scope: GITHUB_SCOPE
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to start device flow');
+    }
+    
+    const data = await response.json();
+    
+    // Show device code modal
+    showDeviceCodeModal(data.user_code, data.verification_uri, data.device_code);
+    
+  } catch (error) {
+    safeLog('Device flow error:', error);
+    alert('Login failed. Please try again.');
+  }
+}
+
+function continueWithoutLogin() {
+  hideLoginSection();
+  showAppContent();
+  console.log("✅ User chose to continue without login - using local storage only");
+}
+
+// Show device code modal
+function showDeviceCodeModal(userCode, verificationUri, deviceCode) {
+  // Create modal if it doesn't exist
+  let modal = document.getElementById('deviceCodeModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'deviceCodeModal';
+    modal.className = 'modal';
+    modal.style.display = 'block';
+    modal.innerHTML = `
+      <div class="modal-content" style="max-width: 500px; text-align: center;">
+        <h2 style="color: #4b0082; margin-bottom: 20px;">🔐 GitHub Login</h2>
+        <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+          <h3 style="margin: 0 0 15px 0; color: #495057;">Step 1: Enter this code on GitHub</h3>
+          <div style="font-size: 24px; font-weight: bold; color: #4b0082; background: white; border: 2px solid #4b0082; border-radius: 8px; padding: 15px; margin: 15px 0; letter-spacing: 2px;">${userCode}</div>
+          <p style="margin: 15px 0; color: #6c757d;">Go to: <a href="${verificationUri}" target="_blank" style="color: #007bff;">${verificationUri}</a></p>
+        </div>
+        <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+          <strong>🔒 Privacy Notice:</strong> We'll store your intolerance list privately in a GitHub Gist. No files/photos are uploaded.
+        </div>
+        <div id="deviceCodeStatus" style="margin: 20px 0; min-height: 20px;">
+          <div style="color: #6c757d;">⏳ Waiting for authorization...</div>
+        </div>
+        <button onclick="cancelDeviceFlow()" style="background-color: #6c757d; color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer;">Cancel</button>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  } else {
+    modal.style.display = 'block';
+  }
+  
+  // Start polling for token
+  pollForDeviceToken(deviceCode);
+}
+
+// Poll for device token
+async function pollForDeviceToken(deviceCode) {
+  const maxAttempts = 60; // 5 minutes max
+  let attempts = 0;
+  
+  const poll = async () => {
+    try {
+      const response = await fetch('https://github.com/login/oauth/access_token', {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          client_id: GITHUB_CLIENT_ID,
+          device_code: deviceCode,
+          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.access_token) {
+        // Success! Close modal and authenticate
+        closeDeviceCodeModal();
+        await authenticateUser(data.access_token);
+      } else if (data.error === 'authorization_pending') {
+        // Still waiting
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 5000); // Poll every 5 seconds
+        } else {
+          showDeviceCodeError('Login timed out. Please try again.');
+        }
+      } else if (data.error === 'expired_token') {
+        showDeviceCodeError('Login expired. Please try again.');
+      } else {
+        showDeviceCodeError('Login failed. Please try again.');
+      }
+    } catch (error) {
+      safeLog('Polling error:', error);
+      showDeviceCodeError('Connection error. Please try again.');
+    }
+  };
+  
+  poll();
+}
+
+// Show device code error
+function showDeviceCodeError(message) {
+  const statusEl = document.getElementById('deviceCodeStatus');
+  if (statusEl) {
+    statusEl.innerHTML = `<div style="color: #dc3545;">❌ ${message}</div>`;
+  }
+}
+
+// Close device code modal
+function closeDeviceCodeModal() {
+  const modal = document.getElementById('deviceCodeModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+// Cancel device flow
+function cancelDeviceFlow() {
+  closeDeviceCodeModal();
+}
+
+function generateRandomState() {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+function hideLoginSection() {
+  const loginSection = document.getElementById('login-section');
+  if (loginSection) {
+    loginSection.style.display = 'none';
+  }
+}
+
+function showAppContent() {
+  const appContent = document.getElementById('app-content');
+  if (appContent) {
+    appContent.style.display = 'block';
+  }
+}
+
+function hideAppContent() {
+  const appContent = document.getElementById('app-content');
+  if (appContent) {
+    appContent.style.display = 'none';
+  }
+}
+
+function showUserProfile() {
+  const userProfileDisplay = document.getElementById('user-profile-display');
+  if (userProfileDisplay) {
+    userProfileDisplay.style.display = 'block';
+  }
+}
+
+function hideUserProfile() {
+  const userProfileDisplay = document.getElementById('user-profile-display');
+  if (userProfileDisplay) {
+    userProfileDisplay.style.display = 'none';
+  }
+}
+
+// Device flow doesn't need callback handling
+
+// Authenticate user with access token
+async function authenticateUser(accessToken) {
+  try {
+    const response = await fetch('https://api.github.com/user', {
+      headers: {
+        'Authorization': `token ${accessToken}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    const user = await response.json();
+    
+    if (user.login) {
+      currentUser = {
+        username: user.login,
+        name: user.name || user.login,
+        avatar: user.avatar_url,
+        accessToken: accessToken
+      };
+      
+      isAuthenticated = true;
+      
+      // Store authentication state in sessionStorage (more secure than localStorage)
+      sessionStorage.setItem('myDNADiet_auth', JSON.stringify(currentUser));
+      
+      // Update UI
+      updateUserProfileDisplay();
+      hideLoginSection();
+      showUserProfile();
+      showAppContent();
+      
+      // Load user's cloud data
+      await loadUserCloudData();
+      
+      console.log('✅ User authenticated:', currentUser.username);
+    } else {
+      throw new Error('Failed to get user data');
+    }
+  } catch (error) {
+    console.error('Error authenticating user:', error);
+    alert('Authentication failed. Please try again.');
+  }
+}
+
+// Update user profile display
+function updateUserProfileDisplay() {
+  if (currentUser) {
+    const userNameEl = document.getElementById('user-name');
+    const userAvatarEl = document.getElementById('user-avatar');
+    
+    if (userNameEl) userNameEl.textContent = currentUser.name;
+    if (userAvatarEl) {
+      userAvatarEl.src = currentUser.avatar;
+      userAvatarEl.alt = `${currentUser.name}'s avatar`;
+    }
+  }
+}
+
+// Logout function
+function logout() {
+  isAuthenticated = false;
+  currentUser = null;
+  userGistId = null;
+  
+  // Clear stored auth data
+  sessionStorage.removeItem('myDNADiet_auth');
+  safeStorage.removeItem('myDNADiet_userGistId');
+  
+  // Update UI
+  hideUserProfile();
+  showLoginSection();
+  
+  console.log('✅ User logged out');
+}
+
+// Show login section
+function showLoginSection() {
+  const loginSection = document.getElementById('login-section');
+  if (loginSection) {
+    loginSection.style.display = 'block';
+    console.log("✅ Login section shown");
+  } else {
+    console.error("❌ Login section element not found!");
+  }
+}
+
+// ===== CLOUD STORAGE FUNCTIONS =====
+async function loadUserCloudData() {
+  if (!isAuthenticated || !currentUser) return;
+  
+  try {
+    // First, try to find existing gist
+    const gists = await fetchUserGists();
+    let profileGist = gists.find(gist => gist.description === GIST_DESCRIPTION);
+    
+    if (profileGist) {
+      userGistId = profileGist.id;
+      safeStorage.setItem('myDNADiet_userGistId', userGistId);
+      
+      // Load data from gist
+      const gistData = await fetchGistContent(profileGist.id);
+      if (gistData) {
+        await loadProfilesFromCloudData(gistData);
+        console.log('✅ Loaded user data from cloud');
+      }
+    } else {
+      console.log('ℹ️ No existing cloud data found - will create on first save');
+    }
+  } catch (error) {
+    console.error('Error loading cloud data:', error);
+  }
+}
+
+async function fetchUserGists() {
+  const response = await fetch('https://api.github.com/gists', {
+    headers: {
+      'Authorization': `token ${currentUser.accessToken}`,
+      'Accept': 'application/vnd.github.v3+json'
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch gists');
+  }
+  
+  return await response.json();
+}
+
+async function fetchGistContent(gistId) {
+  const response = await fetch(`https://api.github.com/gists/${gistId}`, {
+    headers: {
+      'Authorization': `token ${currentUser.accessToken}`,
+      'Accept': 'application/vnd.github.v3+json'
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch gist content');
+  }
+  
+  const gist = await response.json();
+  const file = gist.files[GIST_FILENAME];
+  
+  if (file && file.content) {
+    return JSON.parse(file.content);
+  }
+  
+  return null;
+}
+
+async function saveUserCloudData() {
+  if (!isAuthenticated || !currentUser) return;
+  
+  try {
+    // Only sync the minimal data needed - no raw files, no metadata
+    const cloudProfile = toCloudProfile({
+      name: currentProfileName,
+      intolerances: userIntolerances.map(item => item.item) // Extract just the item names
+    });
+    
+    const gistData = {
+      description: GIST_DESCRIPTION,
+      public: false,
+      files: {
+        [GIST_FILENAME]: {
+          content: JSON.stringify(cloudProfile, null, 2)
+        }
+      }
+    };
+    
+    let response;
+    if (userGistId) {
+      // Update existing gist
+      response = await fetch(`https://api.github.com/gists/${userGistId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `token ${currentUser.accessToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(gistData)
+      });
+    } else {
+      // Create new gist
+      response = await fetch('https://api.github.com/gists', {
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${currentUser.accessToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(gistData)
+      });
+    }
+    
+    if (response.ok) {
+      const gist = await response.json();
+      userGistId = gist.id;
+      safeStorage.setItem('myDNADiet_userGistId', userGistId);
+      safeLog('✅ Data saved to cloud (count:', cloudProfile.intolerances.length, ')');
+      return true;
+    } else {
+      throw new Error('Failed to save to cloud');
+    }
+  } catch (error) {
+    safeLog('Error saving to cloud:', error);
+    return false;
+  }
+}
+
+async function loadProfilesFromCloudData(cloudData) {
+  if (cloudData.profiles) {
+    profileData = cloudData.profiles;
+  }
+  if (cloudData.intolerances) {
+    intolerances = cloudData.intolerances;
+  }
+  if (cloudData.userIntolerances) {
+    userIntolerances = cloudData.userIntolerances;
+  }
+  if (cloudData.currentProfileName) {
+    currentProfileName = cloudData.currentProfileName;
+  }
+  
+  // Update UI
+  renderIntolerances();
+  loadCurrentIntolerances();
+}
+
+// Sync data function
+async function syncData() {
+  if (!isAuthenticated) {
+    alert('Please login first to sync data');
+    return;
+  }
+  
+  if (!isOnline) {
+    alert('🛰️ You\'re offline. Will sync when back online.');
+    return;
+  }
+  
+  try {
+    const success = await saveUserCloudData();
+    if (success) {
+      showDataSavedNotification('💾 Data synced to GitHub (private) + this device.');
+    } else {
+      alert('❌ Failed to sync data. Please try again.');
+    }
+  } catch (error) {
+    safeLog('Sync error:', error);
+    alert('❌ Sync failed. Please try again.');
+  }
+}
+
+// Delete cloud data function
+async function deleteCloudData() {
+  if (!isAuthenticated || !userGistId) {
+    alert('No cloud data to delete');
+    return;
+  }
+  
+  if (!confirm('Are you sure you want to delete your cloud data? This will remove your intolerance list from GitHub but keep it on this device.')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`https://api.github.com/gists/${userGistId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `token ${currentUser.accessToken}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    });
+    
+    if (response.ok || response.status === 404) {
+      userGistId = null;
+      safeStorage.removeItem('myDNADiet_userGistId');
+      alert('Cloud data deleted successfully. Your data remains on this device.');
+      safeLog('✅ Cloud data deleted');
+    } else {
+      throw new Error('Failed to delete cloud data');
+    }
+  } catch (error) {
+    safeLog('Error deleting cloud data:', error);
+    alert('Failed to delete cloud data. Please try again.');
+  }
 }
 
 // ===== DRAG AND DROP FUNCTIONS =====
@@ -253,8 +804,45 @@ const safeStorage = {
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', async function() {
-  console.log("✅ App initialized - no authentication required");
+  console.log("✅ App initialized with GitHub OAuth support");
   console.log("🔒 Using safe localStorage wrapper to prevent interference with other apps");
+  
+  // Device flow doesn't need callback handling
+  
+  // Check for existing authentication
+  const storedAuth = sessionStorage.getItem('myDNADiet_auth');
+  if (storedAuth) {
+    try {
+      currentUser = JSON.parse(storedAuth);
+      isAuthenticated = true;
+      userGistId = safeStorage.getItem('myDNADiet_userGistId');
+      
+      // Update UI for authenticated user
+      updateUserProfileDisplay();
+      hideLoginSection();
+      showUserProfile();
+      showAppContent();
+      
+      // Load cloud data
+      await loadUserCloudData();
+      
+      console.log('✅ User already authenticated:', currentUser.username);
+    } catch (error) {
+      console.error('Error loading stored auth:', error);
+      // Clear invalid auth data
+      safeStorage.removeItem('myDNADiet_auth');
+      safeStorage.removeItem('myDNADiet_userGistId');
+    }
+  }
+  
+  // If not authenticated, show login options
+  if (!isAuthenticated) {
+    console.log("🔐 User not authenticated - showing login section");
+    showLoginSection();
+    hideAppContent();
+  } else {
+    console.log("✅ User authenticated - showing app content");
+  }
   
   // Load all profiles from localStorage first
   loadAllProfilesFromStorage();
@@ -288,8 +876,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     setTimeout(() => {
       showOnboarding();
     }, 1000); // Small delay to let the app load first
-  } else {
-    // App content is already visible by default
+  } else if (isAuthenticated) {
+    // Only show app content if user is authenticated
     // Select the last active profile or default to Mocha
     const lastProfile = safeStorage.getItem("myDNADiet_lastActiveProfile") || "Mocha";
     selectPet(lastProfile);
@@ -2376,8 +2964,8 @@ function addExtractedIngredients(ingredientsString) {
   document.getElementById("fileUpload").value = "";
 }
 
-// Save intolerances to localStorage
-function saveIntolerances() {
+// Save intolerances to localStorage and cloud
+async function saveIntolerances() {
   if (userIntolerances.length === 0) {
     alert("Please add some items first.");
     return;
@@ -2393,10 +2981,31 @@ function saveIntolerances() {
     
     // Use safe storage wrapper to avoid conflicts with other apps
     safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
-    alert("Intolerances saved successfully! They will be available in your profile.");
     
     // Add to the main intolerances object
     intolerances[currentProfileName] = userIntolerances.map(item => item.item);
+    
+    // Update profileData
+    if (!profileData) profileData = {};
+    profileData[currentProfileName] = {
+      intolerances: userIntolerances,
+      type: "user",
+      lastUpdated: new Date().toISOString()
+    };
+    
+    // Save to cloud if authenticated and online
+    if (isAuthenticated && isOnline) {
+      const cloudSuccess = await saveUserCloudData();
+      if (cloudSuccess) {
+        alert("💾 Saved to GitHub (private) + this device.");
+      } else {
+        alert("💾 Saved locally. Cloud sync failed - will retry when online.");
+      }
+    } else if (isAuthenticated && !isOnline) {
+      alert("💾 Saved locally. Will sync to GitHub when online.");
+    } else {
+      alert("💾 Saved successfully! They will be available in your profile.");
+    }
     
     // Show user profile button
     showUserProfileButton();
@@ -2466,8 +3075,8 @@ function clearAppData() {
   }
 }
 
-// Auto-save intolerances to localStorage
-function autoSaveIntolerances() {
+// Auto-save intolerances to localStorage and cloud
+async function autoSaveIntolerances() {
   if (userIntolerances.length > 0) {
     try {
       const data = {
@@ -2487,12 +3096,23 @@ function autoSaveIntolerances() {
       intolerances[currentProfileName] = userIntolerances.map(item => item.item);
       
       // Update profileData with the new intolerances
-      if (profileData[currentProfileName]) {
-        profileData[currentProfileName].intolerances = userIntolerances;
-      }
+      if (!profileData) profileData = {};
+      profileData[currentProfileName] = {
+        intolerances: userIntolerances,
+        type: "user",
+        lastUpdated: new Date().toISOString()
+      };
       
       // Save all profiles to localStorage for persistence using the new system
       saveAllProfiles();
+      
+      // Save to cloud if authenticated and online
+      if (isAuthenticated && isOnline) {
+        await saveUserCloudData();
+        safeLog("✅ Auto-saved intolerances to cloud for profile:", currentProfileName);
+      } else if (isAuthenticated && !isOnline) {
+        safeLog("⚠️ Auto-saved locally - will sync when online");
+      }
       
       // Show user profile button
       showUserProfileButton();

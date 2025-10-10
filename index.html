@@ -209,7 +209,7 @@
       cursor: pointer;
     }
     #app-content {
-      display: block;
+      display: none; /* Hidden by default, shown by JavaScript */
     }
     
     /* Scanner modal minimized state */
@@ -233,7 +233,49 @@
   <div class="container">
     <h1>My DNA Diet 🧬</h1>
 
-    <!-- Login section removed - no authentication required -->
+    <!-- GitHub OAuth Login Section -->
+    <div id="login-section" class="section" style="text-align: center; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border: 2px solid #6c757d; margin-bottom: 25px;">
+      <h3 style="margin: 0 0 15px 0; color: #495057;">🔐 Choose Your Experience</h3>
+      <p style="margin: 0 0 20px 0; color: #6c757d; font-size: 16px;">
+        Login to sync your data across devices, or continue without login for maximum privacy.
+      </p>
+      <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 8px; padding: 12px; margin-bottom: 15px; font-size: 14px; color: #1565c0;">
+        <strong>🔒 Privacy Notice:</strong> We'll store your intolerance list privately in a GitHub Gist. No files/photos are uploaded.
+      </div>
+      <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap;">
+        <button id="githubLoginBtn" onclick="loginWithGitHub()" style="background-color: #24292e; color: white; border: none; border-radius: 8px; padding: 12px 24px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          Login with GitHub
+        </button>
+        <button onclick="continueWithoutLogin()" style="background-color: #6c757d; color: white; border: none; border-radius: 8px; padding: 12px 24px; cursor: pointer; font-size: 14px;">
+          🔒 Continue Without Login
+        </button>
+      </div>
+      <div style="margin-top: 15px; font-size: 12px; color: #6c757d;">
+        <p style="margin: 0;">💡 <strong>With Login:</strong> Sync across devices, backup data, share profiles</p>
+        <p style="margin: 5px 0 0 0;">🔒 <strong>Without Login:</strong> Maximum privacy, local storage only</p>
+      </div>
+    </div>
+
+    <!-- User Profile Display (shown when logged in) -->
+    <div id="user-profile-display" class="section" style="display: none; background: linear-gradient(135deg, #e8f5e8, #f0f8ff); border: 2px solid #4caf50; margin-bottom: 25px;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <img id="user-avatar" src="" alt="User Avatar" style="width: 40px; height: 40px; border-radius: 50%;">
+          <div>
+            <h3 style="margin: 0; color: #1976d2;">Welcome back, <span id="user-name">User</span>!</h3>
+            <p style="margin: 0; color: #1565c0; font-size: 14px;">Your data is synced across all devices</p>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="syncData()" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px;">🔄 Sync</button>
+          <button onclick="deleteCloudData()" style="background-color: #ffc107; color: black; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px;">🗑️ Delete Cloud</button>
+          <button onclick="logout()" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 12px;">Logout</button>
+        </div>
+      </div>
+    </div>
 
     <div id="app-content">
       <!-- Welcome message for new users -->
@@ -496,12 +538,15 @@
 
           <h3>3. Privacy & Data Collection</h3>
           <ul>
-            <li>No login is required</li>
-            <li>No personal identifiers are transmitted</li>
+            <li><strong>Optional Login:</strong> You can use the app without creating an account for maximum privacy</li>
+            <li><strong>With Login:</strong> Uses GitHub OAuth - only username, name, and avatar are collected</li>
+            <li><strong>Cloud Storage:</strong> If you login, your intolerance profiles are stored in private GitHub Gists</li>
+            <li><strong>Local Storage:</strong> Without login, all data stays on your device</li>
             <li>Camera access is used only for scanning labels and is not recorded or stored</li>
-            <li>Ingredient data is processed locally and not saved to any server</li>
+            <li>Ingredient data is processed locally and only synced to cloud if you choose to login</li>
+            <li><strong>Data Control:</strong> You can logout and delete your cloud data anytime</li>
           </ul>
-          <p>If future versions implement cloud features or authentication, this policy will be updated accordingly.</p>
+          <p><strong>Privacy-First Design:</strong> The app works completely offline without login. Cloud features are optional for convenience.</p>
 
           <h3>4. Intellectual Property</h3>
           <p>All content and functionality within the app — including branding, layout, and code — are property of Ember Worldwide Productions LLC. Unauthorized reproduction, reverse engineering, or redistribution is prohibited.</p>
