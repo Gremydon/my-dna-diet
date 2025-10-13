@@ -79,6 +79,13 @@ let isAuthenticated = false;
 let currentUser = null;
 let userGistId = null;
 
+// Ensure global intolerance containers exist in local-only mode
+if (typeof window !== 'undefined') {
+  if (typeof window.intolerances === 'undefined' || window.intolerances === null) {
+    window.intolerances = {};
+  }
+}
+
 // Firebase configuration removed - no authentication required
 
 // ===== GREMMY'S HELPER FUNCTIONS =====
@@ -585,8 +592,15 @@ function handleFileDrop(event) {
     const fileInput = document.getElementById("fileUpload");
     fileInput.files = files;
     
-    // Trigger the file processing
-    processUploadedFile();
+    // Ensure a visible process button for iOS users
+    const processBtn = document.getElementById('processPhoto');
+    if (processBtn) {
+      processBtn.style.display = 'inline-block';
+    }
+    // Trigger the file processing if auto-processing is supported
+    if (typeof processUploadedFile === 'function') {
+      processUploadedFile();
+    }
   }
 }
 
@@ -2178,6 +2192,12 @@ function uploadImage(event) {
       return;
     }
     
+    // On iOS Safari, ensure there is a visible action to proceed
+    const captureBtn = document.getElementById('processPhoto');
+    if (captureBtn) {
+      captureBtn.style.display = 'inline-block';
+    }
+    // Proceed to process by default
     processImage(file);
   }
 }
@@ -2966,6 +2986,10 @@ function addExtractedIngredients(ingredientsString) {
 
 // Save intolerances to localStorage and cloud
 async function saveIntolerances() {
+  // Guard: initialize containers in local mode
+  if (!window.intolerances) window.intolerances = {};
+  if (!Array.isArray(userIntolerances)) userIntolerances = [];
+
   if (userIntolerances.length === 0) {
     alert("Please add some items first.");
     return;
@@ -3004,7 +3028,7 @@ async function saveIntolerances() {
     } else if (isAuthenticated && !isOnline) {
       alert("💾 Saved locally. Will sync to GitHub when online.");
     } else {
-      alert("💾 Saved successfully! They will be available in your profile.");
+      alert("💾 Saved locally (no login). You can sync later by logging in.");
     }
     
     // Show user profile button
