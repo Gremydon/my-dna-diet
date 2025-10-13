@@ -346,12 +346,14 @@ function updateUserProfileDisplay() {
   if (currentUser) {
     const userNameEl = document.getElementById('user-name');
     const userAvatarEl = document.getElementById('user-avatar');
+    const activeNameEl = document.getElementById('activeProfileName');
     
     if (userNameEl) userNameEl.textContent = currentUser.name;
     if (userAvatarEl) {
       userAvatarEl.src = currentUser.avatar;
       userAvatarEl.alt = `${currentUser.name}'s avatar`;
     }
+    if (activeNameEl) activeNameEl.textContent = currentProfileName || currentPet || 'My Profile';
   }
 }
 
@@ -1770,6 +1772,9 @@ let currentPet = "Mocha";
 // Select Pet Function
 function selectPet(petName) {
   currentPet = petName;
+  // Keep a display name for active profile
+  const activeNameEl = document.getElementById('activeProfileName');
+  if (activeNameEl) activeNameEl.textContent = petName;
   
   // Save the last active profile to localStorage
   safeStorage.setItem("myDNADiet_lastActiveProfile", petName);
@@ -1815,6 +1820,20 @@ function selectPet(petName) {
       </div>
     `;
     return;
+  }
+
+  // Load per-profile intolerances from storage (local-only key)
+  try {
+    const key = `myDNADiet_profile_${petName}`;
+    const stored = safeStorage.getItem(key);
+    if (stored) {
+      const data = JSON.parse(stored);
+      if (Array.isArray(data.intolerances)) {
+        intolerances[petName] = data.intolerances;
+      }
+    }
+  } catch (e) {
+    console.warn('Profile load warning:', e);
   }
 
   renderIntolerances();
@@ -3029,6 +3048,17 @@ async function saveIntolerances() {
     
     // Use safe storage wrapper to avoid conflicts with other apps
     safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
+    // Also save per-profile key for separation
+    try {
+      const perProfile = {
+        name: currentProfileName,
+        intolerances: userIntolerances.map(i => i.item),
+        updatedAt: Date.now(),
+      };
+      safeStorage.setItem(`myDNADiet_profile_${currentProfileName}`, JSON.stringify(perProfile));
+    } catch (e) {
+      console.warn('Per-profile save warning:', e);
+    }
     
     // Add to the main intolerances object
     intolerances[currentProfileName] = userIntolerances.map(item => item.item);
@@ -3140,6 +3170,17 @@ async function autoSaveIntolerances() {
       
       // Use safe storage wrapper to avoid conflicts with other apps
       safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
+      // Also save per-profile key for separation
+      try {
+        const perProfile = {
+          name: currentProfileName,
+          intolerances: userIntolerances.map(i => i.item),
+          updatedAt: Date.now(),
+        };
+        safeStorage.setItem(`myDNADiet_profile_${currentProfileName}`, JSON.stringify(perProfile));
+      } catch (e) {
+        console.warn('Per-profile save warning:', e);
+      }
       
       // Update the simple user intolerance list for scanning
       userIntoleranceList = userIntolerances.map(item => item.item);
