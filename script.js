@@ -24,6 +24,46 @@ const safeLog = (...args) => {
   if (DEBUG_SAFE) console.log(...args); 
 };
 
+// ===== 5Strands severity helpers (numeric canonical: 0..3) =====
+function sevToLabel(n) {
+  const SEVERITY_LABEL = ["None", "Mild", "Moderate", "Severe"];
+  return SEVERITY_LABEL[n] ?? "Unknown";
+}
+
+function labelToSev(lbl = "") {
+  const s = String(lbl).toLowerCase();
+  if (s.startsWith("sev")) return 3;
+  if (s.startsWith("mod")) return 2;
+  if (s.startsWith("mild") || s.startsWith("low")) return 1;
+  if (s.startsWith("none")) return 0;
+  return 2; // legacy fallback
+}
+
+// Parse raw to 0..3 (supports "Level 2", "(3)", "2-Moderate", bare numbers)
+function parse5StrandsLevel(raw) {
+  const m = String(raw ?? "").match(/\b([0-3])\b/);
+  return m ? Number(m[1]) : null;
+}
+
+// Final mapping: 0 => 0 (caller should skip), 1..3 => keep, otherwise fallback
+function mapFiveStrandsLevel(raw, fallback = 2) {
+  const n = parse5StrandsLevel(raw);
+  if (n === 0) return 0;
+  if (n === 1 || n === 2 || n === 3) return n;
+  return fallback;
+}
+
+// Normalize legacy saved items where level might be label text
+function normalizeItemsLevels(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map(it => {
+    let lvl = it.level;
+    if (typeof lvl === 'string') lvl = labelToSev(lvl);
+    if (typeof lvl !== 'number') lvl = 2;
+    return { ...it, level: lvl };
+  });
+}
+
 // Offline detection
 let isOnline = navigator.onLine;
 window.addEventListener('online', () => {
@@ -3929,17 +3969,13 @@ function processCSVFile(file) {
             return;
           }
           
-          const intolerances = extractIntolerancesFromCSV(results.data);
-          if (intolerances.length > 0) {
+          const mapped = mapCSVRowsToIntolerances(results.data);
+          if (mapped.length > 0) {
             // Get the currently selected profile
             const currentProfile = currentPet || "Mocha";
             
             // Create unified intolerance object structure
-            const intoleranceData = intolerances.map(item => ({
-              item: item,
-              category: "Other",
-              level: 2
-            }));
+            const intoleranceData = mapped;
             
             // Store in profile data structure
             if (!profileData) profileData = {};
@@ -3966,7 +4002,7 @@ function processCSVFile(file) {
             // Clear file input
             document.getElementById("fileUpload").value = "";
             
-            showUploadStatus(`Successfully loaded ${intolerances.length} intolerance items from CSV file for ${currentProfile}`, "success");
+            showUploadStatus(`Successfully loaded ${mapped.length} intolerance items from CSV file for ${currentProfile}`, "success");
           } else {
             showUploadStatus("No intolerance data found in the CSV file. Please check the format.", "warning");
           }
@@ -4013,8 +4049,8 @@ function processPDFFile(file) {
       Promise.all(pagePromises).then(function(pageTexts) {
         fullText = pageTexts.join(' ');
         
-        // Extract intolerances from PDF text (5Strands format)
-        const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
+// Extract intolerances from PDF text (5Strands format)
+const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
         
         console.log("🔍 PDF Parsing Result - Raw intolerances array length:", intolerances.length);
         console.log("🔍 PDF Parsing Result - Sample intolerances:", intolerances.slice(0, 10));
@@ -4024,11 +4060,7 @@ function processPDFFile(file) {
           console.log("🔍 PDF Processing - Sample Intolerances:", intolerances.slice(0, 5));
           
           // Create unified intolerance object structure
-          const intoleranceData = intolerances.map(item => ({
-            item: item,
-            category: "Other",
-            level: 2
-          }));
+          const intoleranceData = intolerances;
           
           // Update user intolerances directly
           userIntolerances = intoleranceData;
@@ -4132,18 +4164,14 @@ function processTextFile(file) {
       const content = e.target.result;
       
       // Extract intolerances from text content
-      const intolerances = extractIntolerancesFromText(content);
+      const intolerances = mapTextLinesToIntolerances(content);
       
       if (intolerances.length > 0) {
         // Get the currently selected profile
         const currentProfile = currentPet || "Mocha";
         
         // Create unified intolerance object structure
-        const intoleranceData = intolerances.map(item => ({
-          item: item,
-          category: "Other",
-          level: 2
-        }));
+        const intoleranceData = intolerances;
         
         // Store in profile data structure
         if (!profileData) profileData = {};
@@ -4181,21 +4209,18 @@ function processTextFile(file) {
 }
 
 // Extract intolerances from CSV data
-function extractIntolerancesFromCSV(csvData) {
-  const intolerances = [];
-  
-  csvData.forEach(row => {
-    if (Array.isArray(row)) {
-      row.forEach(cell => {
-        if (cell && typeof cell === 'string') {
-          const extracted = extractIntolerancesFromText(cell);
-          intolerances.push(...extracted);
-        }
-      });
-    }
-  });
-  
-  return [...new Set(intolerances)]; // Remove duplicates
+function mapCSVRowsToIntolerances(rows) {
+  const out = [];
+  for (const row of rows) {
+    if (!row || typeof row !== 'object') continue;
+    const name = String(row.Item || row.Food || row.Name || row[0] || '').trim();
+    if (!name) continue;
+    const levelRaw = row.Level || row.Severity || row['5Strands Level'] || row[1];
+    const levelNum = mapFiveStrandsLevel(levelRaw, 2);
+    if (levelNum === 0) continue; // skip none
+    out.push({ item: name, category: 'Other', level: levelNum });
+  }
+  return out;
 }
 
 // Extract intolerances from text
@@ -4230,76 +4255,38 @@ function extractIntolerancesFromText(text) {
   return [...new Set(intolerances)]; // Remove duplicates
 }
 
+// Map raw text lines with embedded levels to intolerance objects
+function mapTextLinesToIntolerances(text) {
+  const out = [];
+  const lines = String(text || '').split(/\n|\r|;|,/);
+  for (const line of lines) {
+    const level = mapFiveStrandsLevel(line, 2);
+    const name = String(line)
+      .replace(/\b(?:level\s*)?[0-3]\b/i, '')
+      .replace(/[()\-]/g, '')
+      .trim();
+    if (!name) continue;
+    if (level === 0) continue;
+    out.push({ item: name, category: 'Other', level });
+  }
+  return out;
+}
+
 // Extract intolerances from 5Strands PDF text
 function extractIntolerancesFrom5StrandsPDF(text) {
-  const intolerances = [];
-  
-  // More sophisticated patterns for 5Strands reports
-  const patterns = [
-    // Pattern 1: Look for capitalized words that are likely food items
-    /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g,
-    // Pattern 2: Look for words in ALL CAPS (common in reports)
-    /([A-Z]{2,}(?:\s+[A-Z]{2,})*)/g,
-    // Pattern 3: Look for words after common prefixes
-    /(?:Food|Item|Ingredient|Allergen):\s*([A-Za-z\s]+)/gi,
-    // Pattern 4: Look for words in parentheses or brackets
-    /[\(\[\{]([A-Za-z\s]+)[\)\]\}]/g
-  ];
-  
-  // Common food categories and items to look for
-  const foodKeywords = [
-    'wheat', 'gluten', 'dairy', 'milk', 'eggs', 'soy', 'nuts', 'peanuts', 'shellfish', 'fish',
-    'corn', 'rice', 'oats', 'barley', 'rye', 'quinoa', 'buckwheat', 'amaranth', 'millet',
-    'beef', 'pork', 'chicken', 'turkey', 'lamb', 'venison', 'bison', 'duck', 'goose',
-    'tomato', 'potato', 'onion', 'garlic', 'pepper', 'carrot', 'celery', 'cucumber',
-    'apple', 'banana', 'orange', 'strawberry', 'blueberry', 'raspberry', 'grape',
-    'almond', 'walnut', 'cashew', 'pecan', 'hazelnut', 'macadamia', 'pistachio',
-    'sugar', 'honey', 'maple', 'agave', 'stevia', 'aspartame', 'sucralose',
-    'yeast', 'vinegar', 'citric', 'ascorbic', 'benzoic', 'sulfite', 'nitrate'
-  ];
-  
-  // Process each pattern
-  patterns.forEach(pattern => {
-    const matches = text.match(pattern);
-    if (matches) {
-      matches.forEach(match => {
-        const cleanMatch = match.trim();
-        
-        // Filter out common non-food words
-        const excludeWords = [
-          'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-          'this', 'that', 'these', 'those', 'is', 'are', 'was', 'were', 'be', 'been',
-          'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
-          'page', 'report', 'test', 'result', 'level', 'score', 'date', 'time', 'name',
-          'address', 'phone', 'email', 'website', 'company', 'laboratory', 'medical'
-        ];
-        
-        if (cleanMatch.length > 2 && cleanMatch.length < 100) {
-          const lowerMatch = cleanMatch.toLowerCase();
-          
-          // Check if it's a food-related word or contains food keywords
-          const isFoodRelated = foodKeywords.some(keyword => 
-            lowerMatch.includes(keyword) || keyword.includes(lowerMatch)
-          );
-          
-          // Check if it's not in the exclude list
-          const isNotExcluded = !excludeWords.includes(lowerMatch);
-          
-          if (isFoodRelated || (isNotExcluded && /^[A-Za-z\s]+$/.test(cleanMatch))) {
-            intolerances.push(cleanMatch);
-          }
-        }
-      });
-    }
-  });
-  
-  // Remove duplicates and sort
-  const uniqueIntolerances = [...new Set(intolerances)].sort();
-  
-  console.log(`Extracted ${uniqueIntolerances.length} potential intolerances from PDF`);
-  console.log('Sample extracted items:', uniqueIntolerances.slice(0, 10));
-  
-  return uniqueIntolerances;
+  const out = [];
+  const lines = String(text || '').split(/\n|\r|\s{2,}/);
+  const PDF_LINE_RE = /^\s*([^-(\d]+?)\s*(?:[-( ]\s*(?:level\s*)?([0-3]))?\s*[)]?\s*$/i;
+  for (const raw of lines) {
+    const m = raw.match(PDF_LINE_RE);
+    if (!m) continue;
+    const name = m[1] && m[1].trim();
+    const levelNum = mapFiveStrandsLevel(m[2], 2);
+    if (!name) continue;
+    if (levelNum === 0) continue;
+    out.push({ item: name, category: 'Other', level: levelNum });
+  }
+  return out;
 }
 
 // Toggle example profiles visibility
