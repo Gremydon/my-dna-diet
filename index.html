@@ -570,9 +570,12 @@
     <!-- Onboarding Modal -->
     <div id="onboardingModal" class="modal" style="display: none;">
       <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 10px;">
           <h2 style="margin: 0; color: #4b0082;">🚀 Welcome to My DNA Diet!</h2>
-          <button id="closeOnboarding" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">❌</button>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button onclick="loginWithGitHub()" style="background-color: #24292e; color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer;">🔐 Login with GitHub</button>
+            <button id="closeOnboarding" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">❌</button>
+          </div>
         </div>
         
         <div id="onboardingSteps">

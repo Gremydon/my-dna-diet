@@ -283,6 +283,18 @@ function hideUserProfile() {
   }
 }
 
+// Soft prompt login before actions that often imply sync intent
+function promptLoginIfNeeded(contextHint) {
+  if (!isAuthenticated) {
+    const wantsLogin = confirm((contextHint || 'Login recommended') + "\n\nWould you like to login with GitHub now to sync across devices?");
+    if (wantsLogin) {
+      loginWithGitHub();
+      return true;
+    }
+  }
+  return false;
+}
+
 // Device flow doesn't need callback handling
 
 // Authenticate user with access token
@@ -858,6 +870,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log("🔐 User not authenticated - showing login section");
     showLoginSection();
     hideAppContent();
+
+    // Gentle prompt to login if user proceeds to create a profile
+    const createProfileBtn = document.getElementById('createProfileBtn');
+    if (createProfileBtn) {
+      createProfileBtn.addEventListener('click', function() {
+        promptLoginIfNeeded('Sync your new profile to GitHub (optional).');
+      });
+    }
   } else {
     console.log("✅ User authenticated - showing app content");
   }
@@ -3022,6 +3042,10 @@ async function saveIntolerances() {
     };
     
     // Save to cloud if authenticated and online
+    if (!isAuthenticated) {
+      // Nudge users to login if they expect sync
+      safeLog('Local-only save: user not authenticated');
+    }
     if (isAuthenticated && isOnline) {
       const cloudSuccess = await saveUserCloudData();
       if (cloudSuccess) {
