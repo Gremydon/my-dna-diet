@@ -1,7 +1,7 @@
 // GitHub OAuth Configuration
 const GITHUB_CLIENT_ID = 'your_github_client_id_here'; // You'll need to replace this with your actual GitHub OAuth App Client ID
 const GITHUB_REDIRECT_URI = window.location.origin + window.location.pathname;
-const GITHUB_SCOPE = 'gist,read:user'; // Minimal scopes - no email access
+const GITHUB_SCOPE = 'gist read:user'; // Minimal scopes - space-delimited per GitHub spec
 const APP_VERSION = '1.0.0'; // Bump this to force client updates
 
 // Cloud Storage Configuration
@@ -107,12 +107,12 @@ async function loginWithGitHub() {
       method: 'POST',
       headers: {
         'Accept': 'application/json',
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: JSON.stringify({
+      body: new URLSearchParams({
         client_id: GITHUB_CLIENT_ID,
         scope: GITHUB_SCOPE
-      })
+      }).toString()
     });
     
     if (!response.ok) {
@@ -122,7 +122,7 @@ async function loginWithGitHub() {
     const data = await response.json();
     
     // Show device code modal
-    showDeviceCodeModal(data.user_code, data.verification_uri, data.device_code);
+    showDeviceCodeModal(data.user_code, data.verification_uri, data.device_code, data.interval || 5);
     
   } catch (error) {
     safeLog('Device flow error:', error);
@@ -137,7 +137,7 @@ function continueWithoutLogin() {
 }
 
 // Show device code modal
-function showDeviceCodeModal(userCode, verificationUri, deviceCode) {
+function showDeviceCodeModal(userCode, verificationUri, deviceCode, intervalSec) {
   // Create modal if it doesn't exist
   let modal = document.getElementById('deviceCodeModal');
   if (!modal) {
@@ -168,13 +168,14 @@ function showDeviceCodeModal(userCode, verificationUri, deviceCode) {
   }
   
   // Start polling for token
-  pollForDeviceToken(deviceCode);
+  pollForDeviceToken(deviceCode, intervalSec);
 }
 
 // Poll for device token
-async function pollForDeviceToken(deviceCode) {
+async function pollForDeviceToken(deviceCode, intervalSec) {
   const maxAttempts = 60; // 5 minutes max
   let attempts = 0;
+  const pollIntervalMs = Math.max(5, Number(intervalSec) || 5) * 1000;
   
   const poll = async () => {
     try {
@@ -182,13 +183,13 @@ async function pollForDeviceToken(deviceCode) {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/x-www-form-urlencoded'
         },
-        body: JSON.stringify({
+        body: new URLSearchParams({
           client_id: GITHUB_CLIENT_ID,
           device_code: deviceCode,
           grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-        })
+        }).toString()
       });
       
       const data = await response.json();
@@ -201,12 +202,15 @@ async function pollForDeviceToken(deviceCode) {
         // Still waiting
         attempts++;
         if (attempts < maxAttempts) {
-          setTimeout(poll, 5000); // Poll every 5 seconds
+          setTimeout(poll, pollIntervalMs);
         } else {
           showDeviceCodeError('Login timed out. Please try again.');
         }
       } else if (data.error === 'expired_token') {
         showDeviceCodeError('Login expired. Please try again.');
+      } else if (data.error === 'slow_down') {
+        // Increase interval per spec
+        setTimeout(poll, pollIntervalMs + 5000);
       } else {
         showDeviceCodeError('Login failed. Please try again.');
       }
