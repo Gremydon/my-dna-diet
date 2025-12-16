@@ -1,8 +1,53 @@
-// GitHub OAuth Configuration
-const GITHUB_CLIENT_ID = 'your_github_client_id_here'; // You'll need to replace this with your actual GitHub OAuth App Client ID
-const GITHUB_REDIRECT_URI = window.location.origin + window.location.pathname;
-const GITHUB_SCOPE = 'gist read:user'; // Minimal scopes - space-delimited per GitHub spec
+// Firebase Configuration
+// Replace these with your Firebase project configuration
+const FIREBASE_CONFIG = {
+  apiKey: "your-api-key-here",
+  authDomain: "your-project-id.firebaseapp.com",
+  projectId: "your-project-id",
+  storageBucket: "your-project-id.appspot.com",
+  messagingSenderId: "your-messaging-sender-id",
+  appId: "your-app-id"
+};
+
 const APP_VERSION = '1.0.0'; // Bump this to force client updates
+
+// Initialize Firebase
+let firebaseApp;
+let firebaseAuth;
+try {
+  // Check if Firebase is loaded
+  if (typeof firebase === 'undefined') {
+    console.error('❌ Firebase SDK not loaded. Check that Firebase scripts are included in index.html');
+    throw new Error('Firebase SDK not available');
+  }
+  
+  // Validate config before initializing
+  if (!FIREBASE_CONFIG || !FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey === 'your-api-key-here') {
+    console.error('❌ Firebase config validation failed:', {
+      config: FIREBASE_CONFIG,
+      hasApiKey: !!FIREBASE_CONFIG?.apiKey,
+      hasProjectId: !!FIREBASE_CONFIG?.projectId
+    });
+    throw new Error('Firebase configuration is incomplete or contains placeholder values');
+  }
+  
+  firebaseApp = firebase.initializeApp(FIREBASE_CONFIG);
+  firebaseAuth = firebase.auth();
+  console.log('✅ Firebase initialized successfully', {
+    projectId: FIREBASE_CONFIG.projectId,
+    authDomain: FIREBASE_CONFIG.authDomain
+  });
+} catch (error) {
+  console.error('❌ Firebase initialization error - FULL DETAILS:', {
+    code: error.code,
+    message: error.message,
+    stack: error.stack,
+    error: error,
+    config: FIREBASE_CONFIG,
+    firebaseAvailable: typeof firebase !== 'undefined'
+  });
+  firebaseAuth = null; // Ensure it's null on error
+}
 
 // Cloud Storage Configuration
 const GIST_FILENAME = 'profile.json';
@@ -126,7 +171,7 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Firebase configuration removed - no authentication required
+// Firebase is initialized above
 
 // ===== GREMMY'S HELPER FUNCTIONS =====
 function show(el) { el?.classList.remove("hidden"); }
@@ -139,34 +184,177 @@ function toast(msg) {
   console.log("[MyDNA] " + msg); // replace with your toast system if you have one
 }
 
-// ===== GITHUB DEVICE FLOW AUTHENTICATION =====
+// ===== FIREBASE AUTHENTICATION WITH GITHUB =====
 async function loginWithGitHub() {
   try {
-    // Start device flow
-    const response = await fetch('https://github.com/login/device/code', {
-      method: 'POST',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: new URLSearchParams({
-        client_id: GITHUB_CLIENT_ID,
-        scope: GITHUB_SCOPE
-      }).toString()
+    // Verify Firebase is initialized
+    if (!firebaseAuth) {
+      const error = new Error('Firebase not initialized');
+      console.error('❌ Firebase authentication error:', {
+        code: 'FIREBASE_NOT_INITIALIZED',
+        message: error.message,
+        config: FIREBASE_CONFIG,
+        firebaseAvailable: typeof firebase !== 'undefined'
+      });
+      alert('⚠️ Firebase is not configured.\n\nPlease set up Firebase and add your configuration to script.js\n\nSee GITHUB_OAUTH_SETUP.md for instructions.');
+      return;
+    }
+
+    // Verify Firebase config is not using placeholders
+    if (FIREBASE_CONFIG.apiKey === 'your-api-key-here' || 
+        FIREBASE_CONFIG.projectId === 'your-project-id') {
+      const error = new Error('Firebase config contains placeholder values');
+      console.error('❌ Firebase configuration error:', {
+        code: 'FIREBASE_CONFIG_PLACEHOLDER',
+        message: error.message,
+        config: FIREBASE_CONFIG
+      });
+      alert('⚠️ Firebase configuration is not complete.\n\nPlease replace the placeholder values in FIREBASE_CONFIG with your actual Firebase project configuration.\n\nSee GITHUB_OAUTH_SETUP.md for instructions.');
+      return;
+    }
+
+    // Create GitHub provider
+    const provider = new firebase.auth.GithubAuthProvider();
+    provider.addScope('gist');
+    provider.addScope('read:user');
+
+    console.log('🔐 Attempting GitHub authentication...');
+    console.log('Firebase config projectId:', FIREBASE_CONFIG.projectId);
+
+    // Use redirect for GitHub Pages (more reliable than popup)
+    // This will redirect the user to GitHub, then back to the app
+    await firebaseAuth.signInWithRedirect(provider);
+    // Note: The actual authentication happens in handleAuthRedirect() below
+    // This function will return immediately, and the redirect will happen
+
+  } catch (error) {
+    // Log full error details to console
+    console.error('❌ Firebase authentication error - FULL DETAILS:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack,
+      error: error,
+      firebaseAuth: !!firebaseAuth,
+      config: {
+        projectId: FIREBASE_CONFIG.projectId,
+        authDomain: FIREBASE_CONFIG.authDomain
+      }
     });
     
-    if (!response.ok) {
-      throw new Error('Failed to start device flow');
+    // Show user-friendly error message
+    let errorMsg = 'Unknown error';
+    let userMessage = 'Login failed. Please check the browser console for details.';
+    
+    if (error.code) {
+      errorMsg = `${error.code}: ${error.message || 'No message'}`;
+      
+      if (error.code === 'auth/popup-closed-by-user') {
+        userMessage = 'Login cancelled. Please try again.';
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+        userMessage = 'An account already exists with a different sign-in method.';
+      } else if (error.code === 'auth/popup-blocked') {
+        userMessage = 'Popup was blocked. Please allow popups for this site.';
+      } else if (error.code === 'auth/operation-not-allowed') {
+        userMessage = 'GitHub sign-in is not enabled. Please enable it in Firebase Console.';
+      } else if (error.code === 'auth/invalid-api-key') {
+        userMessage = 'Invalid Firebase API key. Please check your Firebase configuration.';
+      } else if (error.code === 'auth/unauthorized-domain') {
+        userMessage = 'This domain is not authorized. Please add it in Firebase Console → Authentication → Settings → Authorized domains.';
+      } else {
+        userMessage = `Login failed: ${error.code}\n\n${error.message || 'See browser console for details'}`;
+      }
+    } else if (error.message) {
+      errorMsg = error.message;
+      userMessage = `Login failed: ${error.message}`;
     }
     
-    const data = await response.json();
+    alert(`❌ ${userMessage}\n\nError code: ${error.code || 'N/A'}\n\nPlease check:\n1. Firebase is properly configured (project: ${FIREBASE_CONFIG.projectId})\n2. GitHub OAuth is enabled in Firebase Console\n3. Domain is authorized in Firebase\n4. See browser console for full error details`);
+  }
+}
+
+// Handle authentication redirect result (called on page load after redirect)
+async function handleAuthRedirect() {
+  try {
+    if (!firebaseAuth) {
+      console.warn('⚠️ Firebase not initialized, skipping redirect handling');
+      return;
+    }
+
+    const result = await firebaseAuth.getRedirectResult();
     
-    // Show device code modal
-    showDeviceCodeModal(data.user_code, data.verification_uri, data.device_code, data.interval || 5);
-    
+    if (result.credential) {
+      // User just completed authentication via redirect
+      console.log('✅ Authentication redirect successful');
+      
+      const user = result.user;
+      const credential = result.credential;
+      const accessToken = credential.accessToken;
+      
+      if (!accessToken) {
+        throw new Error('Failed to get GitHub access token from credential');
+      }
+
+      // Get GitHub username from provider data
+      const additionalUserInfo = result.additionalUserInfo;
+      const githubUsername = additionalUserInfo?.username || user.displayName || user.email?.split('@')[0] || 'GitHub User';
+      
+      // Fetch full GitHub user info to get avatar and name
+      let githubUserInfo = null;
+      try {
+        const githubResponse = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `token ${accessToken}`,
+            'Accept': 'application/vnd.github.v3+json'
+          }
+        });
+        if (githubResponse.ok) {
+          githubUserInfo = await githubResponse.json();
+        } else {
+          console.warn('GitHub API response not OK:', githubResponse.status, githubResponse.statusText);
+        }
+      } catch (error) {
+        console.warn('Could not fetch GitHub user info:', error);
+      }
+
+      // Store user info
+      currentUser = {
+        username: githubUserInfo?.login || githubUsername,
+        name: githubUserInfo?.name || user.displayName || githubUsername,
+        avatar: githubUserInfo?.avatar_url || user.photoURL || '',
+        accessToken: accessToken,
+        uid: user.uid,
+        email: user.email
+      };
+
+      isAuthenticated = true;
+
+      // Store authentication state
+      sessionStorage.setItem('myDNADiet_auth', JSON.stringify(currentUser));
+
+      // Update UI
+      updateUserProfileDisplay();
+      hideLoginSection();
+      showUserProfile();
+      showAppContent();
+
+      // Load user's cloud data
+      await loadUserCloudData();
+
+      console.log('✅ User authenticated via Firebase redirect:', currentUser.username);
+    } else {
+      // No redirect result - user didn't just complete authentication
+      console.log('ℹ️ No redirect result - user not returning from authentication');
+    }
   } catch (error) {
-    safeLog('Device flow error:', error);
-    alert('Login failed. Please try again.');
+    console.error('❌ Error handling auth redirect - FULL DETAILS:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack,
+      error: error
+    });
+    
+    // Don't show alert here - let the auth state listener handle it
+    console.error('Authentication redirect failed:', error);
   }
 }
 
@@ -176,116 +364,35 @@ function continueWithoutLogin() {
   console.log("✅ User chose to continue without login - using local storage only");
 }
 
-// Show device code modal
-function showDeviceCodeModal(userCode, verificationUri, deviceCode, intervalSec) {
-  // Create modal if it doesn't exist
-  let modal = document.getElementById('deviceCodeModal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'deviceCodeModal';
-    modal.className = 'modal';
-    modal.style.display = 'block';
-    modal.innerHTML = `
-      <div class="modal-content" style="max-width: 500px; text-align: center;">
-        <h2 style="color: #4b0082; margin-bottom: 20px;">🔐 GitHub Login</h2>
-        <div style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-          <h3 style="margin: 0 0 15px 0; color: #495057;">Step 1: Enter this code on GitHub</h3>
-          <div style="font-size: 24px; font-weight: bold; color: #4b0082; background: white; border: 2px solid #4b0082; border-radius: 8px; padding: 15px; margin: 15px 0; letter-spacing: 2px;">${userCode}</div>
-          <p style="margin: 15px 0; color: #6c757d;">Go to: <a href="${verificationUri}" target="_blank" style="color: #007bff;">${verificationUri}</a></p>
-        </div>
-        <div style="background: #e3f2fd; border: 1px solid #2196f3; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
-          <strong>🔒 Privacy Notice:</strong> We'll store your intolerance list privately in a GitHub Gist. No files/photos are uploaded.
-        </div>
-        <div id="deviceCodeStatus" style="margin: 20px 0; min-height: 20px;">
-          <div style="color: #6c757d;">⏳ Waiting for authorization...</div>
-        </div>
-        <button onclick="cancelDeviceFlow()" style="background-color: #6c757d; color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer;">Cancel</button>
-      </div>
-    `;
-    document.body.appendChild(modal);
-  } else {
-    modal.style.display = 'block';
-  }
-  
-  // Start polling for token
-  pollForDeviceToken(deviceCode, intervalSec);
-}
-
-// Poll for device token
-async function pollForDeviceToken(deviceCode, intervalSec) {
-  const maxAttempts = 60; // 5 minutes max
-  let attempts = 0;
-  const pollIntervalMs = Math.max(5, Number(intervalSec) || 5) * 1000;
-  
-  const poll = async () => {
-    try {
-      const response = await fetch('https://github.com/login/oauth/access_token', {
-        method: 'POST',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded'
-        },
-        body: new URLSearchParams({
-          client_id: GITHUB_CLIENT_ID,
-          device_code: deviceCode,
-          grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-        }).toString()
-      });
-      
-      const data = await response.json();
-      
-      if (data.access_token) {
-        // Success! Close modal and authenticate
-        closeDeviceCodeModal();
-        await authenticateUser(data.access_token);
-      } else if (data.error === 'authorization_pending') {
-        // Still waiting
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(poll, pollIntervalMs);
-        } else {
-          showDeviceCodeError('Login timed out. Please try again.');
-        }
-      } else if (data.error === 'expired_token') {
-        showDeviceCodeError('Login expired. Please try again.');
-      } else if (data.error === 'slow_down') {
-        // Increase interval per spec
-        setTimeout(poll, pollIntervalMs + 5000);
-      } else {
-        showDeviceCodeError('Login failed. Please try again.');
-      }
-    } catch (error) {
-      safeLog('Polling error:', error);
-      showDeviceCodeError('Connection error. Please try again.');
+// Logout function
+async function logout() {
+  try {
+    if (firebaseAuth) {
+      await firebaseAuth.signOut();
     }
-  };
-  
-  poll();
-}
-
-// Show device code error
-function showDeviceCodeError(message) {
-  const statusEl = document.getElementById('deviceCodeStatus');
-  if (statusEl) {
-    statusEl.innerHTML = `<div style="color: #dc3545;">❌ ${message}</div>`;
+    
+    // Clear local state
+    currentUser = null;
+    isAuthenticated = false;
+    userGistId = null;
+    
+    // Clear stored auth
+    sessionStorage.removeItem('myDNADiet_auth');
+    safeStorage.removeItem('myDNADiet_userGistId');
+    
+    // Update UI
+    hideUserProfile();
+    showLoginSection();
+    hideAppContent();
+    
+    console.log('✅ User logged out');
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still clear local state even if Firebase logout fails
+    currentUser = null;
+    isAuthenticated = false;
+    sessionStorage.removeItem('myDNADiet_auth');
   }
-}
-
-// Close device code modal
-function closeDeviceCodeModal() {
-  const modal = document.getElementById('deviceCodeModal');
-  if (modal) {
-    modal.style.display = 'none';
-  }
-}
-
-// Cancel device flow
-function cancelDeviceFlow() {
-  closeDeviceCodeModal();
-}
-
-function generateRandomState() {
-  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 }
 
 function hideLoginSection() {
@@ -337,49 +444,8 @@ function promptLoginIfNeeded(contextHint) {
 
 // Device flow doesn't need callback handling
 
-// Authenticate user with access token
-async function authenticateUser(accessToken) {
-  try {
-    const response = await fetch('https://api.github.com/user', {
-      headers: {
-        'Authorization': `token ${accessToken}`,
-        'Accept': 'application/vnd.github.v3+json'
-      }
-    });
-    
-    const user = await response.json();
-    
-    if (user.login) {
-      currentUser = {
-        username: user.login,
-        name: user.name || user.login,
-        avatar: user.avatar_url,
-        accessToken: accessToken
-      };
-      
-      isAuthenticated = true;
-      
-      // Store authentication state in sessionStorage (more secure than localStorage)
-      sessionStorage.setItem('myDNADiet_auth', JSON.stringify(currentUser));
-      
-      // Update UI
-      updateUserProfileDisplay();
-      hideLoginSection();
-      showUserProfile();
-      showAppContent();
-      
-      // Load user's cloud data
-      await loadUserCloudData();
-      
-      console.log('✅ User authenticated:', currentUser.username);
-    } else {
-      throw new Error('Failed to get user data');
-    }
-  } catch (error) {
-    console.error('Error authenticating user:', error);
-    alert('Authentication failed. Please try again.');
-  }
-}
+// This function is no longer needed - Firebase handles authentication
+// Keeping for reference but loginWithGitHub now handles everything
 
 // Update user profile display
 function updateUserProfileDisplay() {
@@ -398,20 +464,34 @@ function updateUserProfileDisplay() {
 }
 
 // Logout function
-function logout() {
-  isAuthenticated = false;
-  currentUser = null;
-  userGistId = null;
-  
-  // Clear stored auth data
-  sessionStorage.removeItem('myDNADiet_auth');
-  safeStorage.removeItem('myDNADiet_userGistId');
-  
-  // Update UI
-  hideUserProfile();
-  showLoginSection();
-  
-  console.log('✅ User logged out');
+async function logout() {
+  try {
+    if (firebaseAuth) {
+      await firebaseAuth.signOut();
+    }
+    
+    // Clear local state
+    currentUser = null;
+    isAuthenticated = false;
+    userGistId = null;
+    
+    // Clear stored auth
+    sessionStorage.removeItem('myDNADiet_auth');
+    safeStorage.removeItem('myDNADiet_userGistId');
+    
+    // Update UI
+    hideUserProfile();
+    showLoginSection();
+    hideAppContent();
+    
+    console.log('✅ User logged out');
+  } catch (error) {
+    console.error('Logout error:', error);
+    // Still clear local state even if Firebase logout fails
+    currentUser = null;
+    isAuthenticated = false;
+    sessionStorage.removeItem('myDNADiet_auth');
+  }
 }
 
 // Show login section
@@ -876,52 +956,107 @@ const safeStorage = {
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', async function() {
-  console.log("✅ App initialized with GitHub OAuth support");
+  console.log("✅ App initialized with Firebase Authentication");
   console.log("🔒 Using safe localStorage wrapper to prevent interference with other apps");
   
-  // Device flow doesn't need callback handling
-  
-  // Check for existing authentication
-  const storedAuth = sessionStorage.getItem('myDNADiet_auth');
-  if (storedAuth) {
-    try {
-      currentUser = JSON.parse(storedAuth);
-      isAuthenticated = true;
-      userGistId = safeStorage.getItem('myDNADiet_userGistId');
-      
-      // Update UI for authenticated user
-      updateUserProfileDisplay();
-      hideLoginSection();
-      showUserProfile();
-      showAppContent();
-      
-      // Load cloud data
-      await loadUserCloudData();
-      
-      console.log('✅ User already authenticated:', currentUser.username);
-    } catch (error) {
-      console.error('Error loading stored auth:', error);
-      // Clear invalid auth data
-      safeStorage.removeItem('myDNADiet_auth');
-      safeStorage.removeItem('myDNADiet_userGistId');
-    }
+  // Handle authentication redirect first (if user is returning from GitHub)
+  if (firebaseAuth) {
+    await handleAuthRedirect();
   }
   
-  // If not authenticated, show login options
-  if (!isAuthenticated) {
-    console.log("🔐 User not authenticated - showing login section");
-    showLoginSection();
-    hideAppContent();
-
-    // Gentle prompt to login if user proceeds to create a profile
-    const createProfileBtn = document.getElementById('createProfileBtn');
-    if (createProfileBtn) {
-      createProfileBtn.addEventListener('click', function() {
-        promptLoginIfNeeded('Sync your new profile to GitHub (optional).');
-      });
-    }
+  // Set up Firebase auth state listener
+  if (firebaseAuth) {
+    firebaseAuth.onAuthStateChanged(async (firebaseUser) => {
+      if (firebaseUser) {
+        // User is signed in via Firebase
+        // Check if we have stored auth data with access token
+        const storedAuth = sessionStorage.getItem('myDNADiet_auth');
+        if (storedAuth) {
+          try {
+            const stored = JSON.parse(storedAuth);
+            // Verify the stored user matches Firebase user
+            if (stored.uid === firebaseUser.uid && stored.accessToken) {
+              currentUser = stored;
+              isAuthenticated = true;
+              userGistId = safeStorage.getItem('myDNADiet_userGistId');
+              
+              // Update UI
+              updateUserProfileDisplay();
+              hideLoginSection();
+              showUserProfile();
+              showAppContent();
+              
+              // Load cloud data
+              await loadUserCloudData();
+              
+              console.log('✅ User authenticated via Firebase:', currentUser.username);
+            } else {
+              // Stored data doesn't match - clear it
+              sessionStorage.removeItem('myDNADiet_auth');
+              console.warn('⚠️ Stored auth data does not match Firebase user');
+            }
+          } catch (error) {
+            console.error('Error loading stored auth:', error);
+            sessionStorage.removeItem('myDNADiet_auth');
+          }
+        } else {
+          // Firebase user exists but no stored token - user needs to re-login
+          console.warn('⚠️ Firebase user found but no stored access token - user needs to login again');
+          await firebaseAuth.signOut();
+        }
+      } else {
+        // User is signed out
+        currentUser = null;
+        isAuthenticated = false;
+        sessionStorage.removeItem('myDNADiet_auth');
+        safeStorage.removeItem('myDNADiet_userGistId');
+        
+        // Update UI
+        hideUserProfile();
+        showLoginSection();
+        hideAppContent();
+        
+        console.log("🔐 User not authenticated - showing login section");
+      }
+    });
   } else {
-    console.log("✅ User authenticated - showing app content");
+    console.warn('⚠️ Firebase not initialized - checking stored auth');
+    // Fallback to stored auth if Firebase not configured
+    const storedAuth = sessionStorage.getItem('myDNADiet_auth');
+    if (storedAuth) {
+      try {
+        currentUser = JSON.parse(storedAuth);
+        isAuthenticated = true;
+        userGistId = safeStorage.getItem('myDNADiet_userGistId');
+        
+        updateUserProfileDisplay();
+        hideLoginSection();
+        showUserProfile();
+        showAppContent();
+        
+        await loadUserCloudData();
+        
+        console.log('✅ User authenticated from storage:', currentUser.username);
+      } catch (error) {
+        console.error('Error loading stored auth:', error);
+        sessionStorage.removeItem('myDNADiet_auth');
+        safeStorage.removeItem('myDNADiet_userGistId');
+      }
+    }
+    
+    if (!isAuthenticated) {
+      console.log("🔐 User not authenticated - showing login section");
+      showLoginSection();
+      hideAppContent();
+    }
+  }
+
+  // Gentle prompt to login if user proceeds to create a profile
+  const createProfileBtn = document.getElementById('createProfileBtn');
+  if (createProfileBtn) {
+    createProfileBtn.addEventListener('click', function() {
+      promptLoginIfNeeded('Sync your new profile to GitHub (optional).');
+    });
   }
   
   // Load all profiles from localStorage first
