@@ -1,12 +1,11 @@
 // Firebase Configuration
-// Replace these with your Firebase project configuration
 const FIREBASE_CONFIG = {
-  apiKey: "your-api-key-here",
-  authDomain: "your-project-id.firebaseapp.com",
-  projectId: "your-project-id",
-  storageBucket: "your-project-id.appspot.com",
-  messagingSenderId: "your-messaging-sender-id",
-  appId: "your-app-id"
+  apiKey: "AIzaSyAKmdmisEF2gwF5ml-O4ekqC3Z9mJHJboI",
+  authDomain: "my-dna-diet.firebaseapp.com",
+  projectId: "my-dna-diet",
+  storageBucket: "my-dna-diet.firebasestorage.app",
+  messagingSenderId: "926809907771",
+  appId: "1:926809907771:web:edffc26f9061274427b21e"
 };
 
 const APP_VERSION = '1.0.0'; // Bump this to force client updates
