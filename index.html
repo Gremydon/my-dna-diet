@@ -233,8 +233,8 @@
   <div class="container">
     <h1>My DNA Diet 🧬</h1>
 
-    <!-- GitHub OAuth Login Section -->
-    <div id="login-section" class="section" style="text-align: center; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border: 2px solid #6c757d; margin-bottom: 25px;">
+    <!-- GitHub OAuth Login Section (hidden in local-first beta; re-enable when CLOUD_SYNC returns) -->
+    <div id="login-section" class="section" style="display: none; text-align: center; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border: 2px solid #6c757d; margin-bottom: 25px;">
       <h3 style="margin: 0 0 15px 0; color: #495057;">🔐 Choose Your Experience</h3>
       <p style="margin: 0 0 20px 0; color: #6c757d; font-size: 16px;">
         Login to sync your data across devices, or continue without login for maximum privacy.
@@ -278,6 +278,12 @@
     </div>
 
     <div id="app-content">
+      <!-- Local-first beta: where your data lives -->
+      <div id="localDataTrustBanner" class="section" style="margin-bottom: 20px; background: #e3f2fd; border: 1px solid #2196f3; color: #1565c0; font-size: 15px; line-height: 1.5;">
+        <strong>Beta — your data stays on this device.</strong>
+        Intolerance lists are saved in this browser (local storage). Scanning and analysis run in your browser; they are not sent to our servers.
+        Use <strong>Export</strong> from the upload screen to keep a backup file. Clearing site data for this site will remove saved profiles—export first if you need a copy.
+      </div>
       <!-- Welcome message for new users -->
       <div id="welcomeMessage" class="section" style="text-align: center; background: linear-gradient(135deg, #e8f5e8, #f0f8ff); border: 2px solid #4caf50; margin-bottom: 25px;">
         <h3 style="margin: 0 0 15px 0; color: #1976d2;">🚀 Welcome to My DNA Diet!</h3>
@@ -579,7 +585,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 10px;">
           <h2 style="margin: 0; color: #4b0082;">🚀 Welcome to My DNA Diet!</h2>
           <div style="display:flex; gap:8px; align-items:center;">
-            <button onclick="loginWithGitHub()" style="background-color: #24292e; color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer;">🔐 Login with GitHub</button>
+            <button type="button" id="onboardingGithubBtn" onclick="loginWithGitHub()" style="background-color: #24292e; color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer;">🔐 Login with GitHub</button>
             <button id="closeOnboarding" style="background-color: #dc3545; color: white; border: none; border-radius: 4px; padding: 8px 12px; cursor: pointer;">❌</button>
           </div>
         </div>

@@ -1,3 +1,10 @@
+/**
+ * Stabilization (beta): local-first experience.
+ * When true: no login wall, no GitHub login prompts, logout keeps the app usable;
+ * intolerance data remains on-device unless the user later opts into sync (non-blocking).
+ */
+const BETA_LOCAL_FIRST = true;
+
 // Firebase Configuration
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyAKmdmisEF2gwF5ml-O4ekqC3Z9mJHJboI",
@@ -116,7 +123,7 @@ window.addEventListener('online', () => {
   safeLog('✅ Back online');
   
   // Auto-sync when back online if authenticated
-  if (isAuthenticated && userIntolerances.length > 0) {
+  if (!BETA_LOCAL_FIRST && isAuthenticated && userIntolerances.length > 0) {
     setTimeout(async () => {
       try {
         await saveUserCloudData();
@@ -144,7 +151,9 @@ function showOfflineMessage() {
       background: #ffc107; color: #000; text-align: center; padding: 8px;
       font-size: 14px; font-weight: bold;
     `;
-    offlineBanner.innerHTML = '🛰️ Offline—saving locally; will sync when online.';
+    offlineBanner.innerHTML = BETA_LOCAL_FIRST
+      ? '🛰️ You are offline. Your intolerance data stays on this device; scanning works if this page was already loaded.'
+      : '🛰️ Offline—saving locally; will sync when online.';
     document.body.appendChild(offlineBanner);
   }
   offlineBanner.style.display = 'block';
@@ -363,37 +372,6 @@ function continueWithoutLogin() {
   console.log("✅ User chose to continue without login - using local storage only");
 }
 
-// Logout function
-async function logout() {
-  try {
-    if (firebaseAuth) {
-      await firebaseAuth.signOut();
-    }
-    
-    // Clear local state
-    currentUser = null;
-    isAuthenticated = false;
-    userGistId = null;
-    
-    // Clear stored auth
-    sessionStorage.removeItem('myDNADiet_auth');
-    safeStorage.removeItem('myDNADiet_userGistId');
-    
-    // Update UI
-    hideUserProfile();
-    showLoginSection();
-    hideAppContent();
-    
-    console.log('✅ User logged out');
-  } catch (error) {
-    console.error('Logout error:', error);
-    // Still clear local state even if Firebase logout fails
-    currentUser = null;
-    isAuthenticated = false;
-    sessionStorage.removeItem('myDNADiet_auth');
-  }
-}
-
 function hideLoginSection() {
   const loginSection = document.getElementById('login-section');
   if (loginSection) {
@@ -431,6 +409,7 @@ function hideUserProfile() {
 
 // Soft prompt login before actions that often imply sync intent
 function promptLoginIfNeeded(contextHint) {
+  if (BETA_LOCAL_FIRST) return false;
   if (!isAuthenticated) {
     const wantsLogin = confirm((contextHint || 'Login recommended') + "\n\nWould you like to login with GitHub now to sync across devices?");
     if (wantsLogin) {
@@ -462,7 +441,7 @@ function updateUserProfileDisplay() {
   }
 }
 
-// Logout function
+// Logout (cloud session only — local intolerance data is preserved)
 async function logout() {
   try {
     if (firebaseAuth) {
@@ -480,8 +459,13 @@ async function logout() {
     
     // Update UI
     hideUserProfile();
-    showLoginSection();
-    hideAppContent();
+    if (BETA_LOCAL_FIRST) {
+      hideLoginSection();
+      showAppContent();
+    } else {
+      showLoginSection();
+      hideAppContent();
+    }
     
     console.log('✅ User logged out');
   } catch (error) {
@@ -490,11 +474,16 @@ async function logout() {
     currentUser = null;
     isAuthenticated = false;
     sessionStorage.removeItem('myDNADiet_auth');
+    if (BETA_LOCAL_FIRST) {
+      hideLoginSection();
+      showAppContent();
+    }
   }
 }
 
 // Show login section
 function showLoginSection() {
+  if (BETA_LOCAL_FIRST) return;
   const loginSection = document.getElementById('login-section');
   if (loginSection) {
     loginSection.style.display = 'block';
@@ -780,11 +769,11 @@ async function onProcessScanClick(evt) {
     const ingredients = parseIngredients(rawText);        // split, lowercase, strip punctuation, etc.
     console.log("[MyDNA] Parsed ingredients:", ingredients);
 
-    // 4) Cross-check against user's intolerances
-    if (userIntoleranceList.length === 0) throw new Error("No intolerances uploaded. Please upload your intolerance data first.");
+    // 4) Cross-check against active intolerance list (merged profile + user list)
+    const intolLower = getActiveIntoleranceStringsForMatching();
+    if (intolLower.length === 0) throw new Error("No intolerances loaded. Upload or select a profile with intolerance data first.");
 
-    const intolerances = userIntoleranceList.map(x => ("" + x).toLowerCase().trim());
-    const matches = ingredients.filter(it => intolerances.includes(it));
+    const matches = ingredients.filter(it => ingredientTokenMatchesIntolerances(it, intolLower));
     console.log("[MyDNA] Matches:", matches);
 
     // 5) Render results in UI (both list + counts), re-use your existing functions if you have them
@@ -1012,10 +1001,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Update UI
         hideUserProfile();
-        showLoginSection();
-        hideAppContent();
-        
-        console.log("🔐 User not authenticated - showing login section");
+        if (BETA_LOCAL_FIRST) {
+          hideLoginSection();
+          showAppContent();
+          console.log("🔐 User not signed in — local-first mode: app stays open");
+        } else {
+          showLoginSection();
+          hideAppContent();
+          console.log("🔐 User not authenticated - showing login section");
+        }
       }
     });
   } else {
@@ -1044,9 +1038,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     if (!isAuthenticated) {
-      console.log("🔐 User not authenticated - showing login section");
-      showLoginSection();
-      hideAppContent();
+      if (BETA_LOCAL_FIRST) {
+        hideLoginSection();
+        showAppContent();
+        console.log("🔐 User not authenticated — local-first mode: app available without login");
+      } else {
+        console.log("🔐 User not authenticated - showing login section");
+        showLoginSection();
+        hideAppContent();
+      }
     }
   }
 
@@ -1090,11 +1090,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     setTimeout(() => {
       showOnboarding();
     }, 1000); // Small delay to let the app load first
-  } else if (isAuthenticated) {
-    // Only show app content if user is authenticated
-    // Select the last active profile or default to Mocha
+  } else if (isAuthenticated || BETA_LOCAL_FIRST) {
+    // Restore last profile (local-first does not require cloud login)
     const lastProfile = safeStorage.getItem("myDNADiet_lastActiveProfile") || "Mocha";
     selectPet(lastProfile);
+  }
+
+  if (BETA_LOCAL_FIRST) {
+    hideLoginSection();
+    showAppContent();
   }
   
   // Setup upload modal event listeners
@@ -1118,10 +1122,6 @@ let onboardingIntolerances = [];
 // global-ish state
 let currentProfile = null;
 let profileData = JSON.parse(localStorage.getItem("profileData") || "{}");
-
-function saveAllProfiles() {
-  localStorage.setItem("profileData", JSON.stringify(profileData));
-}
 
 function setCurrentProfile(name) {
   currentProfile = name;
@@ -1682,10 +1682,9 @@ function showOnboarding() {
   document.getElementById("onboardingFileInput").value = "";
   document.getElementById("onboardingItemInput").value = "";
   
-  // Reset file upload and manual entry displays
-  document.getElementById("onboardingFileUpload").style.display = "none";
-  document.getElementById("onboardingManualEntry").style.display = "none";
-}
+  // Local-first beta: hide optional cloud login inside onboarding
+  const onboardingGh = document.getElementById('onboardingGithubBtn');
+  if (onboardingGh) onboardingGh.style.display = BETA_LOCAL_FIRST ? 'none' : '';
 
 // Close onboarding modal
 function closeOnboarding() {
@@ -2003,7 +2002,15 @@ function selectPet(petName) {
     if (stored) {
       const data = JSON.parse(stored);
       if (Array.isArray(data.intolerances)) {
-        intolerances[petName] = data.intolerances;
+        const raw = data.intolerances;
+        if (raw.length && typeof raw[0] === 'string') {
+          intolerances[petName] = raw.map(s => ('' + s).toLowerCase().trim()).filter(Boolean);
+        } else {
+          intolerances[petName] = raw
+            .map(x => (x && x.item != null ? String(x.item) : ''))
+            .map(s => s.toLowerCase().trim())
+            .filter(Boolean);
+        }
       }
     }
   } catch (e) {
@@ -2150,6 +2157,32 @@ function renderIntolerances() {
 
 // User intolerance data only - no test subjects
 let userIntoleranceList = [];
+
+/** Lowercased intolerance strings merged from user list + active profile keys (scan + test modal). */
+function getActiveIntoleranceStringsForMatching() {
+  const merged = [];
+  const addFrom = (arr) => {
+    if (!Array.isArray(arr)) return;
+    for (const x of arr) {
+      if (typeof x === 'string') merged.push(x);
+      else if (x && typeof x.item === 'string') merged.push(x.item);
+    }
+  };
+  addFrom(userIntoleranceList);
+  if (typeof currentPet === 'string') addFrom(intolerances[currentPet]);
+  if (typeof currentProfileName === 'string' && currentProfileName !== currentPet) {
+    addFrom(intolerances[currentProfileName]);
+  }
+  return [...new Set(merged.map(s => ('' + s).toLowerCase().trim()).filter(Boolean))];
+}
+
+function ingredientTokenMatchesIntolerances(ingredientToken, lowerIntolerances) {
+  const t = (ingredientToken || '').toLowerCase().trim();
+  if (!t || t.length < 2) return false;
+  return lowerIntolerances.some(intol =>
+    intol && (t === intol || t.includes(intol) || intol.includes(t))
+  );
+}
 
 // No need to load test subject data - users will upload their own
 
@@ -2655,10 +2688,9 @@ function viewDiet() {
     return;
   }
 
-  // Lock in current profile immediately
+  // Lock in current profile immediately — merged intolerance list (same as scan / test modal)
   const currentProfile = currentPet;
-  const intoleranceList = intolerances[currentProfile] || [];
-  const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
+  const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
 
   // Show processing status
   resultDiv.innerHTML = `<p>🔄 Processing ${file.name}... This may take a few seconds.</p>`;
@@ -3246,11 +3278,16 @@ async function saveIntolerances() {
     };
     
     // Save to cloud if authenticated and online
-    if (!isAuthenticated) {
-      // Nudge users to login if they expect sync
-      safeLog('Local-only save: user not authenticated');
-    }
-    if (isAuthenticated && isOnline) {
+    if (BETA_LOCAL_FIRST) {
+      if (isAuthenticated && isOnline) {
+        try {
+          await saveUserCloudData();
+        } catch (e) {
+          console.warn('Optional cloud sync failed:', e);
+        }
+      }
+      alert("💾 Saved on this device. Your data stays in this browser until you export or clear site data.");
+    } else if (isAuthenticated && isOnline) {
       const cloudSuccess = await saveUserCloudData();
       if (cloudSuccess) {
         alert("💾 Saved to GitHub (private) + this device.");
@@ -3373,11 +3410,11 @@ async function autoSaveIntolerances() {
       // Save all profiles to localStorage for persistence using the new system
       saveAllProfiles();
       
-      // Save to cloud if authenticated and online
-      if (isAuthenticated && isOnline) {
+      // Save to cloud only when not in local-first beta (avoids surprise network / gist writes)
+      if (!BETA_LOCAL_FIRST && isAuthenticated && isOnline) {
         await saveUserCloudData();
         safeLog("✅ Auto-saved intolerances to cloud for profile:", currentProfileName);
-      } else if (isAuthenticated && !isOnline) {
+      } else if (!BETA_LOCAL_FIRST && isAuthenticated && !isOnline) {
         safeLog("⚠️ Auto-saved locally - will sync when online");
       }
       
@@ -3441,9 +3478,20 @@ function loadAllProfilesFromStorage() {
             
             // If this is a user profile, load it as the current profile
             if (profile.type === "user") {
-              userIntolerances = profile.intolerances;
+              const arr = profile.intolerances;
+              if (Array.isArray(arr) && arr.length > 0) {
+                if (typeof arr[0] === 'string') {
+                  userIntolerances = arr.map(item => ({ item, category: 'Other', level: 2 }));
+                  userIntoleranceList = arr.map(s => ('' + s).trim()).filter(Boolean);
+                } else {
+                  userIntolerances = arr;
+                  userIntoleranceList = arr.map(item => (item && item.item != null ? String(item.item) : '')).filter(Boolean);
+                }
+              } else {
+                userIntolerances = [];
+                userIntoleranceList = [];
+              }
               currentProfileName = profileName;
-              userIntoleranceList = profile.intolerances.map(item => item.item);
               console.log("✅ Set as current user profile:", profileName);
             }
           }
@@ -3485,7 +3533,6 @@ function migrateOldDataToNewSystem() {
         
         // Save to new system
         saveAllProfiles();
-        saveAllProfilesToStorage();
         
         console.log("✅ Migration complete! Moved", userIntolerances.length, "intolerances to new system");
       }
@@ -3992,21 +4039,18 @@ function testFoodIngredients() {
     .map(i => i.trim())
     .filter(i => i.length > 0);
 
-  // Get the intolerance list for the current pet
-  const intoleranceList = intolerances[currentPet] || [];
-  
-  // Normalize the intolerance list
-  const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
+  const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
+  const activeLabel = currentProfileName || currentPet || 'Profile';
 
   const flagged = ingredients.filter(ingredient =>
-    lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
+    ingredientTokenMatchesIntolerances(ingredient, lowerCaseIntolerances)
   );
 
   if (flagged.length > 0) {
     resultDiv.innerHTML = `
       <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 10px 0;">
         <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Potential Issues Found</h4>
-        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${currentPet}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${activeLabel}</p>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Issues Found:</strong> ${flagged.length}</p>
         
@@ -4026,7 +4070,7 @@ function testFoodIngredients() {
     resultDiv.innerHTML = `
       <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin: 10px 0;">
         <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Analysis Complete</h4>
-        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${currentPet}</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${activeLabel}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Issues Found:</strong> None! 🎉</p>
         
@@ -4055,10 +4099,9 @@ function analyzeDietPlan() {
     return;
   }
 
-  // Lock in current profile immediately
+  // Lock in current profile immediately — merged intolerance list (same as scan / test modal)
   const currentProfile = currentPet;
-  const intoleranceList = intolerances[currentProfile] || [];
-  const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
+  const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
 
   // Show processing status
   resultDiv.innerHTML = `<p style='text-align: center; padding: 10px; background-color: #e3f2fd; border-radius: 6px; color: #1976d2;'>🔄 Processing ${file.name}... This may take a few seconds.</p>`;
