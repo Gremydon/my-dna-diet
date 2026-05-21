@@ -779,8 +779,8 @@ async function onProcessScanClick(evt) {
     // 5) Render results in UI (both list + counts), re-use your existing functions if you have them
     renderScanResults({ ingredients, matches, rawText }); // implement to update the UI
 
-    // 6) Close modal + jump to results section
-    hide(modal);                        // or modal.close() if <dialog>
+    // 6) Close scanner cleanly + jump to results section
+    closeScanModal();
     toast(`Found ${matches.length} intolerance(s) in this food.`);
     scrollToId("scanResults");          // scroll to results section
     // optional: briefly highlight results
@@ -878,6 +878,70 @@ function renderScanResults({ ingredients, matches, rawText }) {
     </div>
   `;
   resultsContainer.appendChild(ingredientsDiv);
+  appendScanResultsActions(resultsContainer);
+}
+
+/** Sticky action bar so users are not trapped below long scan results (mobile-friendly). */
+function appendScanResultsActions(resultsContainer) {
+  const actionsDiv = document.createElement("div");
+  actionsDiv.className = "scan-results-actions";
+  actionsDiv.setAttribute("role", "group");
+  actionsDiv.setAttribute("aria-label", "Scan results actions");
+  actionsDiv.style.cssText =
+    "position:sticky;bottom:0;background:#fff;padding:16px 12px;margin-top:20px;" +
+    "border-top:2px solid #4b0082;box-shadow:0 -4px 12px rgba(0,0,0,0.1);z-index:5;" +
+    "display:flex;flex-wrap:wrap;gap:10px;justify-content:center;";
+
+  const baseBtn =
+    "min-height:44px;padding:12px 18px;font-size:16px;border:none;border-radius:8px;" +
+    "cursor:pointer;flex:1 1 160px;max-width:100%;font-weight:600;";
+
+  const scanAgain = document.createElement("button");
+  scanAgain.type = "button";
+  scanAgain.textContent = "📸 Scan Another Label";
+  scanAgain.style.cssText = baseBtn + "background:#28a745;color:#fff;";
+  scanAgain.addEventListener("click", startAnotherLabelScan);
+
+  const backToApp = document.createElement("button");
+  backToApp.type = "button";
+  backToApp.textContent = "⬆️ Back to App";
+  backToApp.style.cssText = baseBtn + "background:#4b0082;color:#fff;";
+  backToApp.addEventListener("click", scrollToAppActions);
+
+  const clearBtn = document.createElement("button");
+  clearBtn.type = "button";
+  clearBtn.textContent = "✕ Clear Results";
+  clearBtn.style.cssText = baseBtn + "background:#6c757d;color:#fff;";
+  clearBtn.addEventListener("click", dismissScanResults);
+
+  actionsDiv.appendChild(scanAgain);
+  actionsDiv.appendChild(backToApp);
+  actionsDiv.appendChild(clearBtn);
+  resultsContainer.appendChild(actionsDiv);
+}
+
+/** Open a fresh scanner session (clears prior capture/OCR UI state). */
+function startAnotherLabelScan() {
+  closeScanModal();
+  openScanModal();
+}
+
+/** Return to main controls without clearing displayed results. */
+function scrollToAppActions() {
+  const bar = document.getElementById("appActionBar");
+  if (bar) {
+    bar.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+/** Clear results panel; does not touch localStorage profiles. */
+function dismissScanResults() {
+  const resultsContainer = document.getElementById("scanResults");
+  if (!resultsContainer) return;
+  resultsContainer.innerHTML =
+    '<div style="text-align:center;padding:16px;color:#555;font-size:15px;">' +
+    "Scan results cleared. Tap <strong>📸 Scan</strong> above to check another label." +
+    "</div>";
 }
 
 // Safe localStorage wrapper to prevent interference with other apps
@@ -2212,15 +2276,27 @@ let isProcessing = false;
 let capturedImageBlob = null; // Store captured image for preview
 
 // Scanner Modal Management
+let scannerListenersBound = false;
+
 function openScanModal() {
-  document.getElementById("scannerModule").style.display = "flex";
+  const modal = document.getElementById("scannerModule");
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.classList.remove("processing");
+    modal.style.display = "flex";
+  }
   resetScannerUI();
   setupScannerEventListeners();
 }
 
 function closeScanModal() {
   stopCamera();
-  document.getElementById("scannerModule").style.display = "none";
+  const modal = document.getElementById("scannerModule");
+  if (modal) {
+    modal.style.display = "none";
+    modal.classList.add("hidden");
+    modal.classList.remove("processing");
+  }
   resetScannerUI();
 }
 
@@ -2248,6 +2324,8 @@ function toggleScannerSize() {
 }
 
 function setupScannerEventListeners() {
+  if (scannerListenersBound) return;
+  scannerListenersBound = true;
   // Setup event listeners for the new modal structure
   document.getElementById("startCamera").addEventListener("click", () => startCamera(currentFacingMode));
   document.getElementById("flipCameraBtn").addEventListener("click", () => {
@@ -2272,8 +2350,20 @@ function resetScannerUI() {
   document.getElementById("startCamera").style.display = "inline-block";
   document.getElementById("fileInput").value = "";
   document.getElementById("video").style.display = "block";
-  document.getElementById("canvas").style.display = "none";
-  document.getElementById("photoPreview").style.display = "none";
+  const canvas = document.getElementById("canvas");
+  if (canvas) {
+    canvas.width = 0;
+    canvas.height = 0;
+    canvas.style.display = "none";
+  }
+  const preview = document.getElementById("photoPreview");
+  if (preview) {
+    preview.removeAttribute("src");
+    preview.style.display = "none";
+  }
+  const spinner = document.getElementById("scanSpinner");
+  if (spinner) hide(spinner);
+  processingScan = false;
   isProcessing = false;
   capturedImageBlob = null;
 }

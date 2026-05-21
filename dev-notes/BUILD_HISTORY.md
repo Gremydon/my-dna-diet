@@ -4,6 +4,29 @@ Chronological log of **meaningful** changes. Each entry should say what, why, an
 
 ---
 
+## 2026-05-21 — STAB-002: Scan results recovery UX
+
+**What**
+
+- After label scan, results panel includes sticky actions: Scan Another Label, Back to App, Clear Results.
+- Successful scan now calls `closeScanModal()` (stops camera, resets capture state) instead of only `hide()`.
+- `openScanModal()` removes `.hidden` so repeat scans can reopen the modal.
+- `resetScannerUI()` clears canvas, preview, file input, and processing flags.
+- One-time scanner event listener binding to avoid duplicate handlers.
+
+**Why**
+
+- Beta testers were trapped below long results with no obvious path to scan again.
+
+**What to test**
+
+1. Scan label → see results → tap Scan Another Label → fresh scanner opens.
+2. Back to App scrolls to main button row.
+3. Clear Results empties panel without losing profile data.
+4. Repeat scan on mobile (iOS Safari): camera stops between scans.
+
+---
+
 ## 2026-05-21 — STAB-001-HOTFIX: Missing `showOnboarding` closing brace
 
 **What**
