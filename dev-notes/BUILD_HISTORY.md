@@ -4,6 +4,22 @@ Chronological log of **meaningful** changes. Each entry should say what, why, an
 
 ---
 
+## 2026-05-21 — STAB-003B: Gluten / wheat alias fix (branch: stab-003b-gluten-alias-fix)
+
+**What**
+
+- Expanded `GLUTEN_GRAIN_ALIASES` (wheat, barley, rye, malt variants, semolina, durum, spelt, etc.).
+- Linked `gluten` and `wheat` roots to the same alias set.
+- Gluten-free claim suppression: “gluten free” on a token does not alone trigger gluten match.
+- Word-boundary substring for short terms (e.g. `malt` vs `maltitol`).
+- STAB-003B tests 1–4 in `runIngredientMatchingTests()`.
+
+**Why**
+
+- Prevent false negatives for gluten-sensitive users when label lists grains, not the word “gluten”.
+
+---
+
 ## 2026-05-21 — STAB-003: Accuracy hardening (branch only, not merged)
 
 **What**

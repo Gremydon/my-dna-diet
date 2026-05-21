@@ -202,6 +202,17 @@
     return typeof INGREDIENT_ALIASES !== "undefined" ? INGREDIENT_ALIASES : {};
   }
 
+  function getGlutenLinkedRoots() {
+    if (typeof GLUTEN_LINKED_ROOTS !== "undefined" && Array.isArray(GLUTEN_LINKED_ROOTS)) {
+      return GLUTEN_LINKED_ROOTS;
+    }
+    return ["gluten", "wheat"];
+  }
+
+  function isGlutenLinkedRoot(root) {
+    return getGlutenLinkedRoots().includes(root);
+  }
+
   function resolveAliasRootsForNormalized(n) {
     const groups = getAliasGroups();
     const roots = new Set();
@@ -212,7 +223,57 @@
         if (normalizeIngredientText(alias) === n) roots.add(root);
       }
     }
+    if ([...roots].some(isGlutenLinkedRoot)) {
+      getGlutenLinkedRoots().forEach((r) => roots.add(r));
+    }
     return [...roots];
+  }
+
+  function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function isGlutenFreeClaimPhrase(text) {
+    const n = normalizeIngredientText(text || "");
+    return /\bgluten\s*free\b/.test(n);
+  }
+
+  function getGlutenGrainNormalizedTerms() {
+    const terms = new Set();
+    const groups = getAliasGroups();
+    getGlutenLinkedRoots().forEach((root) => {
+      terms.add(normalizeIngredientText(root));
+      (groups[root] || []).forEach((alias) => {
+        const na = normalizeIngredientText(alias);
+        if (na) terms.add(na);
+      });
+    });
+    terms.delete("gluten");
+    return terms;
+  }
+
+  function tokenContainsGlutenGrain(normalized) {
+    if (!normalized) return false;
+    const grains = getGlutenGrainNormalizedTerms();
+    const words = tokenWords(normalized);
+    for (const g of grains) {
+      if (!g || g.length < 3) continue;
+      if (g.length < 4) {
+        if (words.some((w) => w === g)) return true;
+        continue;
+      }
+      const wb = new RegExp(`\\b${escapeRegex(g)}\\b`);
+      if (wb.test(normalized)) return true;
+    }
+    return false;
+  }
+
+  function shouldSuppressGlutenFalsePositive(tokenObj, matchRoot) {
+    if (!matchRoot || !isGlutenLinkedRoot(matchRoot)) return false;
+    const raw = tokenObj.raw || "";
+    const n = tokenObj.normalized || normalizeIngredientText(raw);
+    if (!isGlutenFreeClaimPhrase(n) && !isGlutenFreeClaimPhrase(raw)) return false;
+    return !tokenContainsGlutenGrain(n);
   }
 
   function buildIntoleranceMatchIndex(lowerIntolerances) {
@@ -259,6 +320,12 @@
     const words = tokenWords(n);
     if (intol.length < 4) return words.some((w) => w === intol);
     if (n.length < 4) return words.some((w) => w === intol);
+    if (intol.length <= 6) {
+      const wb = new RegExp(`\\b${escapeRegex(intol)}\\b`);
+      if (wb.test(n)) return true;
+      if (words.some((w) => w === intol)) return true;
+      return false;
+    }
     if (n.includes(intol) || intol.includes(n)) return true;
     return words.some((w) => w.length >= 4 && (w.includes(intol) || intol.includes(w)));
   }
@@ -277,33 +344,34 @@
 
     if (!n || !index) return result;
 
-    if (index.normalizedExact.has(n)) {
+    function finalizeDefinite(matchType, matchedTarget, matchRoot) {
+      if (shouldSuppressGlutenFalsePositive(tokenObj, matchRoot)) {
+        logMatchDebug({ raw, normalized: n, suppressed: "gluten-free claim", matchRoot });
+        return result;
+      }
       result.tier = "definite";
-      result.matchType = "exact";
-      result.matchedTarget = n;
-      result.confidence = 1;
-      logMatchDebug({ raw, normalized: n, matchType: "exact", tier: "definite" });
+      result.matchType = matchType;
+      result.matchedTarget = matchedTarget;
+      result.confidence = matchType === "exact" ? 1 : matchType === "alias" ? 0.92 : 0.95;
+      logMatchDebug({ raw, normalized: n, matchType, matchedTarget, tier: "definite", matchRoot });
       return result;
     }
 
-    for (const { n: intol, label, kind } of index.substringKeys) {
+    if (index.normalizedExact.has(n)) {
+      const root = resolveAliasRootsForNormalized(n)[0] || null;
+      return finalizeDefinite("exact", n, root);
+    }
+
+    for (const { n: intol, label, kind, root } of index.substringKeys) {
       if (normalizedSubstringMatch(n, intol)) {
-        result.tier = "definite";
-        result.matchType = kind === "alias" ? "alias" : "substring";
-        result.matchedTarget = label;
-        result.confidence = 0.95;
-        logMatchDebug({ raw, normalized: n, matchType: result.matchType, matchedTarget: label, tier: "definite" });
-        return result;
+        const matchRoot = root || resolveAliasRootsForNormalized(intol)[0] || null;
+        return finalizeDefinite(kind === "alias" ? "alias" : "substring", label, matchRoot);
       }
     }
 
     if (index.aliasNormSet.has(n)) {
-      result.tier = "definite";
-      result.matchType = "alias";
-      result.matchedTarget = n;
-      result.confidence = 0.92;
-      logMatchDebug({ raw, normalized: n, matchType: "alias", tier: "definite" });
-      return result;
+      const matchRoot = resolveAliasRootsForNormalized(n)[0] || "gluten";
+      return finalizeDefinite("alias", n, matchRoot);
     }
 
     let bestFuzzy = null;
@@ -405,6 +473,40 @@
       Array.from({ length: 40 }, (_, i) => `ingredient${i}, filler${i}`).join(", ")
     );
     assert("long list parses", longList.tokens.length >= 40);
+
+    function evalLabel(profile, label) {
+      const tokens = parseIngredientHierarchy(label).tokens;
+      return evaluateAllTokens(tokens, profile);
+    }
+
+    const stab003bT1 = evalLabel(["gluten"], "wheat flour, salt");
+    assert(
+      "STAB-003B TEST1 gluten + wheat flour",
+      stab003bT1.some((e) => e.tier === "definite" && e.normalized.includes("wheat"))
+    );
+
+    const stab003bT2 = evalLabel(["wheat"], "semolina pasta");
+    assert(
+      "STAB-003B TEST2 wheat + semolina",
+      stab003bT2.some((e) => e.tier === "definite" && e.normalized.includes("semolina"))
+    );
+
+    const stab003bT3 = evalLabel(["gluten"], "malt vinegar");
+    assert(
+      "STAB-003B TEST3 gluten + malt vinegar",
+      stab003bT3.some((e) => e.tier === "definite" && e.normalized.includes("malt"))
+    );
+
+    const stab003bT4 = evalLabel(["gluten"], "gluten-free oats");
+    assert(
+      "STAB-003B TEST4 gluten-free oats no definite",
+      !stab003bT4.some((e) => e.tier === "definite")
+    );
+
+    assert(
+      "STAB-003B malt word boundary vs maltitol",
+      !definiteMatch("maltitol", ["gluten"])
+    );
 
     const passed = results.filter((r) => r.pass).length;
     const failed = results.length - passed;

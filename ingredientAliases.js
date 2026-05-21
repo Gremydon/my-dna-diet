@@ -1,7 +1,34 @@
 /**
- * STAB-003 — Ingredient alias groups for category-level matching.
+ * STAB-003 / STAB-003B — Ingredient alias groups for category-level matching.
  * If a user intolerance matches a root key (or any alias), all aliases in that group are checked.
  */
+const GLUTEN_GRAIN_ALIASES = [
+  "wheat",
+  "barley",
+  "rye",
+  "malt",
+  "malt extract",
+  "malt flavoring",
+  "malt vinegar",
+  "brewer's yeast",
+  "brewers yeast",
+  "brewer s yeast",
+  "semolina",
+  "durum",
+  "spelt",
+  "farro",
+  "einkorn",
+  "triticale",
+  "bulgur",
+  "couscous",
+  "wheat flour",
+  "enriched flour",
+  "graham flour",
+  "wheat starch",
+  "hydrolyzed wheat protein",
+  "farina"
+];
+
 const INGREDIENT_ALIASES = {
   milk: [
     "casein",
@@ -34,18 +61,8 @@ const INGREDIENT_ALIASES = {
     "tempeh",
     "miso"
   ],
-  gluten: [
-    "wheat",
-    "barley",
-    "rye",
-    "triticale",
-    "spelt",
-    "semolina",
-    "durum",
-    "farina",
-    "malt",
-    "brewer yeast"
-  ],
+  gluten: GLUTEN_GRAIN_ALIASES,
+  wheat: GLUTEN_GRAIN_ALIASES,
   corn: [
     "maize",
     "corn starch",
@@ -83,3 +100,6 @@ const INGREDIENT_ALIASES = {
     "lactitol"
   ]
 };
+
+/** Roots that share the gluten grain alias set (STAB-003B). */
+const GLUTEN_LINKED_ROOTS = ["gluten", "wheat"];
