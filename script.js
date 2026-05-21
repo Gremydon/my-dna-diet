@@ -765,19 +765,29 @@ async function onProcessScanClick(evt) {
     }
     console.log("[MyDNA] OCR text:", rawText);
 
-    // 3) Normalize → ingredients
-    const ingredients = parseIngredients(rawText);        // split, lowercase, strip punctuation, etc.
+    // 3) Parse hierarchy (display raw tokens; matching uses normalized form internally)
+    const hierarchy = typeof IngredientMatching !== "undefined"
+      ? IngredientMatching.parseIngredientHierarchy(rawText)
+      : { tokens: parseIngredients(rawText).map((raw) => ({ raw, normalized: raw })) };
+    const ingredients = hierarchy.tokens.map((t) => t.raw);
     console.log("[MyDNA] Parsed ingredients:", ingredients);
 
     // 4) Cross-check against active intolerance list (merged profile + user list)
     const intolLower = getActiveIntoleranceStringsForMatching();
     if (intolLower.length === 0) throw new Error("No intolerances loaded. Upload or select a profile with intolerance data first.");
 
-    const matches = ingredients.filter(it => ingredientTokenMatchesIntolerances(it, intolLower));
-    console.log("[MyDNA] Matches:", matches);
+    const evaluations = typeof IngredientMatching !== "undefined"
+      ? IngredientMatching.evaluateAllTokens(hierarchy.tokens, intolLower)
+      : ingredients.map((raw) => ({
+          raw,
+          tier: ingredientTokenMatchesIntolerances(raw, intolLower) ? "definite" : "none"
+        }));
+    const matches = evaluations.filter((e) => e.tier === "definite").map((e) => e.raw);
+    const possibleMatches = evaluations.filter((e) => e.tier === "possible");
+    console.log("[MyDNA] Matches:", matches, "Possible:", possibleMatches);
 
     // 5) Render results in UI (both list + counts), re-use your existing functions if you have them
-    renderScanResults({ ingredients, matches, rawText }); // implement to update the UI
+    renderScanResults({ ingredients, matches, possibleMatches, evaluations, rawText });
 
     // 6) Close scanner cleanly + jump to results section
     closeScanModal();
@@ -817,42 +827,48 @@ async function ocrExtract(imageData) {
   }
 }
 
-// Parse ingredients from OCR text
+// Parse ingredients from OCR text (STAB-003: hierarchy parser; raw tokens for display)
 function parseIngredients(rawText) {
-  if (!rawText || typeof rawText !== 'string') return [];
-  
+  if (!rawText || typeof rawText !== "string") return [];
+  if (typeof IngredientMatching !== "undefined") {
+    return IngredientMatching.parseIngredientsFromText(rawText);
+  }
   return rawText
     .toLowerCase()
-    .split(/[\n,;:()\[\]]+/) // Split on common separators
-    .map(item => item.trim())
-    .filter(item => item.length > 2) // Remove very short items
-    .filter(item => /^[a-z\s]+$/.test(item)) // Only letters and spaces
-    .filter(item => !['the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'].includes(item)); // Remove common words
+    .split(/[\n,;:()\[\]]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 2)
+    .filter((item) => /^[a-z\s]+$/.test(item))
+    .filter((item) => !["the", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by"].includes(item));
 }
 
-// Render scan results
-function renderScanResults({ ingredients, matches, rawText }) {
+// Render scan results (raw display tokens; STAB-003 possible-match tier)
+function renderScanResults({ ingredients, matches, possibleMatches, evaluations, rawText }) {
   const resultsContainer = document.getElementById("scanResults");
   if (!resultsContainer) return;
 
+  const evalByRaw = {};
+  (evaluations || []).forEach((e) => {
+    if (e && e.raw) evalByRaw[e.raw] = e;
+  });
+  const possible = possibleMatches || (evaluations || []).filter((e) => e.tier === "possible");
+
   resultsContainer.innerHTML = "";
 
-  // Add scan results header
   const headerDiv = document.createElement("div");
   headerDiv.style.cssText = "background: linear-gradient(135deg, #e8f5e8, #f0f8ff); padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border-left: 4px solid #4b0082;";
   headerDiv.innerHTML = `<h4 style="margin: 0; color: #4b0082;">📸 Food Label Scan Results</h4>`;
   resultsContainer.appendChild(headerDiv);
 
-  // Add summary
   if (matches.length > 0) {
     const summaryDiv = document.createElement("div");
     summaryDiv.style.cssText = "background-color: #ffcccc; color: red; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #dc3545;";
     summaryDiv.innerHTML = `
       <div style="font-size: 16px; margin-bottom: 5px;">⚠️ Found ${matches.length} intolerance(s)</div>
-      <div style="font-size: 14px; font-weight: normal;">${matches.join(', ')}</div>
+      <div style="font-size: 14px; font-weight: normal;">${matches.join(", ")}</div>
     `;
     resultsContainer.appendChild(summaryDiv);
-  } else {
+  } else if (possible.length === 0) {
     const summaryDiv = document.createElement("div");
     summaryDiv.style.cssText = "background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #28a745;";
     summaryDiv.innerHTML = `
@@ -862,19 +878,36 @@ function renderScanResults({ ingredients, matches, rawText }) {
     resultsContainer.appendChild(summaryDiv);
   }
 
-  // Add ingredients list
+  if (possible.length > 0) {
+    const possDiv = document.createElement("div");
+    possDiv.style.cssText = "background-color: #fff3cd; color: #856404; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ffc107;";
+    possDiv.innerHTML = `
+      <div style="font-size: 16px; margin-bottom: 8px; font-weight: bold;">⚠️ POSSIBLE MATCH (review label)</div>
+      <div style="font-size: 14px; font-weight: normal;">OCR confidence may be low. Verify on the package:</div>
+      <ul style="margin: 10px 0 0 0; padding-left: 20px; font-size: 14px;">
+        ${possible.map((p) => {
+          const note = p.fuzzyNote || `"${p.raw}" may relate to "${p.matchedTarget || "intolerance"}"`;
+          return `<li>${note}</li>`;
+        }).join("")}
+      </ul>
+    `;
+    resultsContainer.appendChild(possDiv);
+  }
+
   const ingredientsDiv = document.createElement("div");
   ingredientsDiv.style.cssText = "background: white; border-radius: 8px; padding: 15px; margin: 15px 0;";
   ingredientsDiv.innerHTML = `
     <h4 style="margin: 0 0 10px 0; color: #333;">📋 Scanned Ingredients (${ingredients.length})</h4>
     <div style="display: flex; flex-wrap: wrap; gap: 5px;">
-      ${ingredients.map(ingredient => {
-        const isMatch = matches.includes(ingredient);
-        const style = isMatch ? 
-          "background: #ffcccc; color: red; padding: 4px 8px; border-radius: 4px; font-weight: bold;" :
-          "background: #f8f9fa; color: #666; padding: 4px 8px; border-radius: 4px;";
-        return `<span style="${style}">${ingredient}</span>`;
-      }).join('')}
+      ${ingredients.map((ingredient) => {
+        const ev = evalByRaw[ingredient];
+        const isDefinite = matches.includes(ingredient) || ev?.tier === "definite";
+        const isPossible = ev?.tier === "possible";
+        let style = "background: #f8f9fa; color: #666; padding: 4px 8px; border-radius: 4px;";
+        if (isDefinite) style = "background: #ffcccc; color: red; padding: 4px 8px; border-radius: 4px; font-weight: bold;";
+        else if (isPossible) style = "background: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 4px; font-weight: bold; border: 1px dashed #ffc107;";
+        return `<span style="${style}" title="${ev?.normalized || ""}">${ingredient}</span>`;
+      }).join("")}
     </div>
   `;
   resultsContainer.appendChild(ingredientsDiv);
@@ -2242,10 +2275,13 @@ function getActiveIntoleranceStringsForMatching() {
 }
 
 function ingredientTokenMatchesIntolerances(ingredientToken, lowerIntolerances) {
-  const t = (ingredientToken || '').toLowerCase().trim();
+  if (typeof IngredientMatching !== "undefined") {
+    return IngredientMatching.definiteMatch(ingredientToken, lowerIntolerances);
+  }
+  const t = (ingredientToken || "").toLowerCase().trim();
   if (!t || t.length < 2) return false;
-  return lowerIntolerances.some(intol =>
-    intol && (t === intol || t.includes(intol) || intol.includes(t))
+  return lowerIntolerances.some(
+    (intol) => intol && (t === intol || t.includes(intol) || intol.includes(t))
   );
 }
 
@@ -4124,33 +4160,54 @@ function testFoodIngredients() {
     return;
   }
 
-  const ingredients = input
-    .toLowerCase()
-    .split(/[\n,]+/) // split on newlines or commas
-    .map(i => i.trim())
-    .filter(i => i.length > 0);
-
   const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
-  const activeLabel = currentProfileName || currentPet || 'Profile';
+  const activeLabel = currentProfileName || currentPet || "Profile";
 
-  const flagged = ingredients.filter(ingredient =>
-    ingredientTokenMatchesIntolerances(ingredient, lowerCaseIntolerances)
-  );
+  let tokens;
+  let evaluations;
+  if (typeof IngredientMatching !== "undefined") {
+    const hierarchy = IngredientMatching.parseIngredientHierarchy(input.toLowerCase());
+    tokens = hierarchy.tokens;
+    evaluations = IngredientMatching.evaluateAllTokens(tokens, lowerCaseIntolerances);
+  } else {
+    tokens = input
+      .toLowerCase()
+      .split(/[\n,]+/)
+      .map((i) => i.trim())
+      .filter((i) => i.length > 0)
+      .map((raw) => ({ raw, normalized: raw }));
+    evaluations = tokens.map((t) => ({
+      raw: t.raw,
+      tier: ingredientTokenMatchesIntolerances(t.raw, lowerCaseIntolerances) ? "definite" : "none"
+    }));
+  }
 
-  if (flagged.length > 0) {
+  const ingredients = tokens.map((t) => t.raw);
+  const flagged = evaluations.filter((e) => e.tier === "definite");
+  const possible = evaluations.filter((e) => e.tier === "possible");
+
+  if (flagged.length > 0 || possible.length > 0) {
     resultDiv.innerHTML = `
       <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 10px 0;">
         <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Potential Issues Found</h4>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${activeLabel}</p>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
-        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Issues Found:</strong> ${flagged.length}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Confirmed:</strong> ${flagged.length} · <strong>Possible:</strong> ${possible.length}</p>
         
+        ${flagged.length > 0 ? `
         <div style="background: #ffcccc; border: 1px solid #ffb3b3; border-radius: 6px; padding: 10px; margin: 10px 0;">
-          <p style="margin: 0 0 10px 0; color: #721c24; font-weight: bold;">🚨 Problematic Ingredients:</p>
+          <p style="margin: 0 0 10px 0; color: #721c24; font-weight: bold;">🚨 Confirmed matches:</p>
           <ul style="margin: 0; padding-left: 20px; color: #721c24;">
-            ${flagged.map(i => `<li>${i}</li>`).join("")}
+            ${flagged.map((e) => `<li>${e.raw}</li>`).join("")}
           </ul>
-        </div>
+        </div>` : ""}
+        ${possible.length > 0 ? `
+        <div style="background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 10px; margin: 10px 0;">
+          <p style="margin: 0 0 10px 0; color: #856404; font-weight: bold;">⚠️ Possible matches (verify):</p>
+          <ul style="margin: 0; padding-left: 20px; color: #856404;">
+            ${possible.map((e) => `<li>${e.fuzzyNote || e.raw}</li>`).join("")}
+          </ul>
+        </div>` : ""}
         
         <p style="margin: 10px 0 0 0; color: #856404; font-size: 14px;">
           💡 <strong>Recommendation:</strong> Consider alternatives for the flagged ingredients or consult with a healthcare provider.

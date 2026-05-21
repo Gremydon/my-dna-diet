@@ -4,6 +4,26 @@ Chronological log of **meaningful** changes. Each entry should say what, why, an
 
 ---
 
+## 2026-05-21 — STAB-003: Accuracy hardening (branch only, not merged)
+
+**What**
+
+- `ingredient-matching.js`: `normalizeIngredientText`, `ingredientSimilarity` (Levenshtein), `parseIngredientHierarchy`, alias-expanded index, definite vs possible tiers.
+- `ingredientAliases.js`: dairy/soy/gluten/corn/msg/dyes/sugar alcohols alias groups.
+- `script.js`: scan + test modal use hierarchy parse + `evaluateAllTokens`; display raw OCR tokens; possible-match UI tier.
+- `ingredient-matching-tests.js`: extended console tests.
+
+**Why**
+
+- Improve OCR typo tolerance and nested ingredient lists without changing scanner UX or persistence.
+
+**What to test**
+
+- See `dev-notes/STAB-003-ACCURACY.md` pre-merge checklist.
+- Console: `IngredientMatching.runIngredientMatchingTests()`.
+
+---
+
 ## 2026-05-21 — STAB-002: Scan results recovery UX
 
 **What**
