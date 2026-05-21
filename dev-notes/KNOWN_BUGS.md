@@ -4,6 +4,13 @@
 
 ---
 
+### BUG-009 — `showOnboarding` missing closing brace (blank live UI)
+
+- **Severity:** Critical (deploy blocker)
+- **Status:** **Fixed** (2026-05-21) — restored `}` before `closeOnboarding`; script parses; `DOMContentLoaded` runs.
+
+---
+
 ### BUG-001 — `saveAllProfilesToStorage` is undefined
 
 - **Severity:** High

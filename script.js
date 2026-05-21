@@ -1685,6 +1685,7 @@ function showOnboarding() {
   // Local-first beta: hide optional cloud login inside onboarding
   const onboardingGh = document.getElementById('onboardingGithubBtn');
   if (onboardingGh) onboardingGh.style.display = BETA_LOCAL_FIRST ? 'none' : '';
+}
 
 // Close onboarding modal
 function closeOnboarding() {

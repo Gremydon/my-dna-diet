@@ -4,6 +4,24 @@ Chronological log of **meaningful** changes. Each entry should say what, why, an
 
 ---
 
+## 2026-05-21 — STAB-001-HOTFIX: Missing `showOnboarding` closing brace
+
+**What**
+
+- Added missing `}` at end of `showOnboarding()` in `script.js` (STAB-001 edit left function unclosed).
+
+**Why**
+
+- Unclosed function caused `SyntaxError: Unexpected end of input`; entire script failed to parse, so live site showed only header/background (`#app-content` never initialized).
+
+**What to test**
+
+1. Hard refresh live URL — full app UI visible without login.
+2. Browser console: no parse errors on load.
+3. Existing profiles/intolerances still present after refresh.
+
+---
+
 ## 2026-05-14 — STAB-000: Stabilization system + documentation baseline
 
 **What**
