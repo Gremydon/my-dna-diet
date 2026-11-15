@@ -175,11 +175,23 @@ let userGistId = null;
 // Ensure global intolerance containers exist in local-only mode
 if (typeof window !== 'undefined') {
   if (typeof window.intolerances === 'undefined' || window.intolerances === null) {
-    window.intolerances = {};
+    window.intolerances = Object.create(null);
   }
 }
 
 // Firebase is initialized above
+
+function readSessionAuth() {
+  try { return sessionStorage.getItem('myDNADiet_auth'); }
+  catch (error) { return null; }
+}
+
+// Encode data at HTML sinks; never use this to build JavaScript handlers.
+function escapeHTML(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[char]);
+}
 
 // ===== GREMMY'S HELPER FUNCTIONS =====
 function show(el) { el?.classList.remove("hidden"); }
@@ -495,7 +507,7 @@ function showLoginSection() {
 
 // ===== CLOUD STORAGE FUNCTIONS =====
 async function loadUserCloudData() {
-  if (!isAuthenticated || !currentUser) return;
+  if (BETA_LOCAL_FIRST || !isAuthenticated || !currentUser) return;
   
   try {
     // First, try to find existing gist
@@ -618,6 +630,7 @@ async function saveUserCloudData() {
 }
 
 async function loadProfilesFromCloudData(cloudData) {
+  if (BETA_LOCAL_FIRST) return; // Optional cloud state must not overwrite local beta profiles.
   if (cloudData.profiles) {
     profileData = cloudData.profiles;
   }
@@ -758,23 +771,23 @@ async function onProcessScanClick(evt) {
       throw new Error("No image available. Retake or choose a file.");
     }
 
+    // Capture profile identity before asynchronous OCR.
+    const scanProfile = currentPet;
     // 2) OCR
     const rawText = await ocrExtract(imageBitmapOrBlob);  // <-- your Tesseract.js wrapper
+    if (currentPet !== scanProfile) throw new Error("Profile changed. Scan again for the selected profile.");
     if (!rawText || !rawText.trim()) {
       throw new Error("Couldn't read any text from the label. Try retake with better lighting/focus.");
     }
-    console.log("[MyDNA] OCR text:", rawText);
 
     // 3) Normalize → ingredients
     const ingredients = parseIngredients(rawText);        // split, lowercase, strip punctuation, etc.
-    console.log("[MyDNA] Parsed ingredients:", ingredients);
 
-    // 4) Cross-check against active intolerance list (merged profile + user list)
+    // 4) Cross-check against the selected profile only
     const intolLower = getActiveIntoleranceStringsForMatching();
     if (intolLower.length === 0) throw new Error("No intolerances loaded. Upload or select a profile with intolerance data first.");
 
     const matches = ingredients.filter(it => ingredientTokenMatchesIntolerances(it, intolLower));
-    console.log("[MyDNA] Matches:", matches);
 
     // 5) Render results in UI (both list + counts), re-use your existing functions if you have them
     renderScanResults({ ingredients, matches, rawText }); // implement to update the UI
@@ -849,7 +862,7 @@ function renderScanResults({ ingredients, matches, rawText }) {
     summaryDiv.style.cssText = "background-color: #ffcccc; color: red; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #dc3545;";
     summaryDiv.innerHTML = `
       <div style="font-size: 16px; margin-bottom: 5px;">⚠️ Found ${matches.length} intolerance(s)</div>
-      <div style="font-size: 14px; font-weight: normal;">${matches.join(', ')}</div>
+      <div style="font-size: 14px; font-weight: normal;">${matches.map(escapeHTML).join(', ')}</div>
     `;
     resultsContainer.appendChild(summaryDiv);
   } else {
@@ -873,7 +886,7 @@ function renderScanResults({ ingredients, matches, rawText }) {
         const style = isMatch ? 
           "background: #ffcccc; color: red; padding: 4px 8px; border-radius: 4px; font-weight: bold;" :
           "background: #f8f9fa; color: #666; padding: 4px 8px; border-radius: 4px;";
-        return `<span style="${style}">${ingredient}</span>`;
+        return `<span style="${style}">${escapeHTML(ingredient)}</span>`;
       }).join('')}
     </div>
   `;
@@ -1008,6 +1021,7 @@ const safeStorage = {
 
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', async function() {
+  if (profileStorageReadError) reportProfileSaveFailure();
   console.log("✅ App initialized with Firebase Authentication");
   console.log("🔒 Using safe localStorage wrapper to prevent interference with other apps");
   
@@ -1022,7 +1036,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (firebaseUser) {
         // User is signed in via Firebase
         // Check if we have stored auth data with access token
-        const storedAuth = sessionStorage.getItem('myDNADiet_auth');
+        const storedAuth = readSessionAuth();
         if (storedAuth) {
           try {
             const stored = JSON.parse(storedAuth);
@@ -1079,7 +1093,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   } else {
     console.warn('⚠️ Firebase not initialized - checking stored auth');
     // Fallback to stored auth if Firebase not configured
-    const storedAuth = sessionStorage.getItem('myDNADiet_auth');
+    const storedAuth = readSessionAuth();
     if (storedAuth) {
       try {
         currentUser = JSON.parse(storedAuth);
@@ -1123,23 +1137,22 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Load all profiles from localStorage first
+  loadProfileDataFromStorage();
+  migrateInboundKeys();
   loadAllProfilesFromStorage();
   
-  // Load profileData from localStorage
-  loadProfileDataFromStorage();
-  
-  // Load intolerance data from JSON files (only if no profiles in storage)
+  // Hydrate legacy personal profiles before considering example seeds.
+  loadUserIntolerancesFromStorage();
+  migrateOldDataToNewSystem();
   if (Object.keys(intolerances).length === 0) {
     await loadIntoleranceData();
   }
-  
-  // Load user intolerances from storage - but only if no data in new system
-  if (userIntolerances.length === 0) {
-    loadUserIntolerancesFromStorage();
-  }
-  
-  // Migrate old data to new system if needed
-  migrateOldDataToNewSystem();
+  const legacyProfile = safeStorage.getItem('myDNADiet_userIntolerances');
+  let legacyName;
+  try { legacyName = legacyProfile && JSON.parse(legacyProfile).name; } catch (error) { /* Preserve unreadable legacy data. */ }
+  const selectedName = safeStorage.getItem('myDNADiet_lastActiveProfile') || currentProfile || legacyName ||
+    (Object.hasOwn(profileData, 'Mocha') ? 'Mocha' : Object.keys(profileData)[0]) || 'My Profile';
+  selectPet(selectedName);
   
   // Show or hide welcome message based on profile status
   if (userIntolerances.length > 0) {
@@ -1156,7 +1169,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 1000); // Small delay to let the app load first
   } else if (isAuthenticated || BETA_LOCAL_FIRST) {
     // Restore last profile (local-first does not require cloud login)
-    const lastProfile = safeStorage.getItem("myDNADiet_lastActiveProfile") || "Mocha";
+    const lastProfile = safeStorage.getItem("myDNADiet_lastActiveProfile") || currentProfile || Object.keys(profileData)[0] || "My Profile";
     selectPet(lastProfile);
   }
 
@@ -1185,12 +1198,20 @@ let onboardingIntolerances = [];
 
 // global-ish state
 let currentProfile = null;
-let profileData = JSON.parse(localStorage.getItem("profileData") || "{}");
+let profileStorageReadError = false;
+let profileData = Object.create(null);
+try {
+  const stored = JSON.parse(localStorage.getItem("profileData") || "{}");
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) throw new Error('Invalid profile storage');
+  profileData = Object.assign(Object.create(null), stored);
+} catch (error) {
+  profileStorageReadError = true;
+  // Keep the original storage untouched for recovery.
+  console.error('Profile storage could not be read. Export a recovery backup before repair.');
+}
 
 function setCurrentProfile(name) {
-  currentProfile = name;
-  localStorage.setItem("currentProfile", name);
-  renderActiveProfile();
+  selectPet(name);
 }
 
 function renderActiveProfile() {
@@ -1221,7 +1242,7 @@ function getAllProfileNames() {
 
 // Check if a profile exists
 function profileExists(name) {
-  return profileData.hasOwnProperty(name);
+  return Object.hasOwn(profileData, name);
 }
 
 // Delete a profile
@@ -1281,7 +1302,7 @@ function createProfile() {
 }
 
 // If you previously stored profiles using keys that start with inbound, run this one-time cleanup to migrate them:
-(function migrateInboundKeys() {
+function migrateInboundKeys() {
   const keys = Object.keys(profileData);
   let changed = false;
   for (const k of keys) {
@@ -1289,17 +1310,18 @@ function createProfile() {
       const pretty = profileData[k].displayName.trim();
       if (pretty && !profileData[pretty]) {
         profileData[pretty] = { ...profileData[k] };
-        delete profileData[k];
+        // Keep the original key for backward compatibility and recovery.
         changed = true;
       }
     }
   }
-  if (changed) saveAllProfiles();
-})();
+  return changed;
+}
 
 // Load the current profile on app startup
 function loadCurrentProfile() {
-  const storedProfile = localStorage.getItem("currentProfile");
+  let storedProfile;
+  try { storedProfile = localStorage.getItem("currentProfile"); } catch (error) { return; }
   if (storedProfile && profileData[storedProfile]) {
     currentProfile = storedProfile;
     console.log("✅ Loaded current profile from storage:", currentProfile);
@@ -1339,42 +1361,27 @@ function exportProfileData(profileName = null) {
 }
 
 // Import profile data from JSON
+function validateBackupProfiles(profiles) {
+  if (!profiles || typeof profiles !== 'object' || Array.isArray(profiles)) throw new Error('Invalid profiles');
+  const validated = Object.create(null);
+  for (const [name, profile] of Object.entries(profiles)) {
+    if (!name.trim() || !profile || !Array.isArray(profile.intolerances)) throw new Error('Invalid profile record');
+    if (normalizeProfileRows(profile.intolerances).length !== profile.intolerances.length) throw new Error('Invalid intolerance row');
+    validated[name] = {...profile, intolerances: normalizeProfileRows(profile.intolerances)};
+  }
+  return validated;
+}
+
 function importProfileData(jsonData) {
   try {
     const data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-    
-    if (!data.profileName || !data.data) {
-      throw new Error("Invalid profile data format");
-    }
-    
-    const profileName = data.profileName.trim();
-    if (!profileName) {
-      throw new Error("Profile name cannot be empty");
-    }
-    
-    // Check if profile already exists
-    if (profileData[profileName]) {
-      if (!confirm(`Profile "${profileName}" already exists. Do you want to overwrite it?`)) {
-        return false;
-      }
-    }
-    
-    // Import the profile data
-    profileData[profileName] = {
-      ...data.data,
-      importedAt: new Date().toISOString(),
-      lastUpdated: new Date().toISOString()
-    };
-    
-    // Save to localStorage
-    saveAllProfiles();
-    
-    console.log("✅ Imported profile data for:", profileName);
-    return true;
-    
+    if (!data || typeof data.profileName !== 'string') throw new Error('Invalid profile name');
+    const name = data.profileName.trim();
+    const profiles = validateBackupProfiles({[name]: data.data});
+    if (Object.hasOwn(profileData, name) && !confirm('Replace the matching profile with this imported copy?')) return false;
+    return restoreValidatedProfiles(profiles, name);
   } catch (error) {
-    console.error("❌ Error importing profile data:", error);
-    alert("Error importing profile data: " + error.message);
+    alert('Profile import failed. Existing stored data was preserved.');
     return false;
   }
 }
@@ -1414,55 +1421,49 @@ function clearAllProfiles() {
 
 // Backup all profile data
 function backupAllProfiles() {
-  const backupData = {
-    profiles: profileData,
-    currentProfile: currentProfile,
-    backupCreatedAt: new Date().toISOString(),
-    version: "1.0"
-  };
-  
-  const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
+  const profiles = Object.assign(Object.create(null), profileData);
+  for (const [name, rows] of Object.entries(intolerances)) {
+    if (!Object.hasOwn(profiles, name)) profiles[name] = {name, intolerances: normalizeProfileRows(rows)};
+  }
+  const backupData = {profiles, currentProfile: currentPet || currentProfile,
+    backupCreatedAt: new Date().toISOString(), version: '1.1', storageSnapshot: profileStorageSnapshot()};
+  const blob = new Blob([JSON.stringify(backupData, null, 2)], {type: 'application/json'});
   const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
+  const a = document.createElement('a');
   a.href = url;
   a.download = `profile_backup_${new Date().toISOString().split('T')[0]}.json`;
   document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
+  a.remove();
   URL.revokeObjectURL(url);
-  
-  console.log("✅ Profile backup created");
   return backupData;
 }
 
-// Restore profile data from backup
+function restoreValidatedProfiles(profiles, selected) {
+  const previous = profileData;
+  const previousIntolerances = Object.assign(Object.create(null), intolerances);
+  profileData = Object.assign(Object.create(null), profileData, profiles);
+  for (const [name, profile] of Object.entries(profiles)) {
+    Object.defineProperty(intolerances, name, {value: profile.intolerances.map(row => row.item), writable:true, enumerable:true, configurable:true});
+  }
+  if (!saveAllProfiles()) {
+    profileData = previous;
+    window.intolerances = previousIntolerances;
+    return false;
+  }
+  selectPet(selected && Object.hasOwn(profileData, selected) ? selected : Object.keys(profiles)[0]);
+  return true;
+}
+
 function restoreFromBackup(backupData) {
   try {
     const data = typeof backupData === 'string' ? JSON.parse(backupData) : backupData;
-    
-    if (!data.profiles || !data.version) {
-      throw new Error("Invalid backup format");
-    }
-    
-    if (confirm("This will overwrite all current profiles. Are you sure you want to continue?")) {
-      profileData = data.profiles;
-      currentProfile = data.currentProfile;
-      
-      // Save to localStorage
-      saveAllProfiles();
-      if (currentProfile) {
-        localStorage.setItem("currentProfile", currentProfile);
-      }
-      
-      console.log("✅ Profiles restored from backup");
-      return true;
-    }
-    
-    return false;
-    
+    if (!data || !['1.0', '1.1'].includes(data.version)) throw new Error('Unsupported backup');
+    const profiles = validateBackupProfiles(data.profiles);
+    if (!confirm('Restore these profiles? Matching names will be replaced; other profiles will be kept.')) return false;
+    return restoreValidatedProfiles(profiles, data.currentProfile);
   } catch (error) {
-    console.error("❌ Error restoring from backup:", error);
-    alert("Error restoring from backup: " + error.message);
+    alert('Backup restore failed. Existing stored data was preserved.');
     return false;
   }
 }
@@ -1758,7 +1759,7 @@ function closeOnboarding() {
   safeStorage.setItem("myDNADiet_onboardingComplete", "true");
   
   // Show the main app content
-  selectPet("Mocha");
+  selectPet(currentProfile || currentProfileName || "Mocha");
 }
 
 // Next onboarding step
@@ -1871,8 +1872,8 @@ function displayOnboardingIntolerances() {
     const levelText = item.level === 3 ? "Severe" : item.level === 2 ? "Moderate" : "Mild";
     
     div.innerHTML = `
-      <span style="font-weight: bold;">${item.item}</span>
-      <span style="color: #666;">${item.category}</span>
+      <span style="font-weight: bold;">${escapeHTML(item.item)}</span>
+      <span style="color: #666;">${escapeHTML(item.category)}</span>
       <span style="background: ${levelColor}; padding: 2px 8px; border-radius: 12px; font-size: 12px;">${levelText}</span>
       <button onclick="removeOnboardingIntolerance(${index})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;">❌</button>
     `;
@@ -1914,7 +1915,7 @@ function createOnboardingProfile() {
   userIntolerances = [];
   currentProfileName = profileName;
   currentProfile = profileName;
-  console.log("Setting profile name to:", currentProfileName);
+  selectPet(profileName);
   
   // Handle file upload if selected
   if (selectedOnboardingOption !== 'manual' && hasFile) {
@@ -1986,7 +1987,7 @@ function completeOnboarding() {
   document.getElementById("scanResults").innerHTML = `
     <div class="section" style="text-align: center; padding: 40px; background: linear-gradient(135deg, #e8f5e8, #f0f8ff);">
       <h3>🎉 Welcome to My DNA Diet!</h3>
-      <p style="font-size: 18px; margin: 20px 0;">Your profile "${currentProfileName}" is now active!</p>
+      <p style="font-size: 18px; margin: 20px 0;">Your profile "${escapeHTML(currentProfileName)}" is now active!</p>
       <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0; border: 2px solid #4caf50;">
         <h4>🚀 Ready to Use:</h4>
         <ul style="text-align: left; max-width: 400px; margin: 10px auto;">
@@ -2009,80 +2010,40 @@ let currentPet = "Mocha";
 
 // Select Pet Function
 function selectPet(petName) {
+  if (petName === "My Profile" && Object.hasOwn(profileData, currentProfileName)) petName = currentProfileName;
+  if (typeof petName !== 'string' || !petName.trim()) return;
   currentPet = petName;
-  // Keep a display name for active profile
-  const activeNameEl = document.getElementById('activeProfileName');
-  if (activeNameEl) activeNameEl.textContent = petName;
-  
-  // Save the last active profile to localStorage
-  safeStorage.setItem("myDNADiet_lastActiveProfile", petName);
-  
-  // If this is a user profile, update the currentProfileName to match
-  if (petName === "My Profile" && userIntolerances.length > 0) {
-    // Try to get the actual profile name from localStorage
+  currentProfileName = petName;
+  currentProfile = petName;
+  let rows = Object.hasOwn(profileData, petName) ? profileData[petName].intolerances : null;
+  if (!Array.isArray(rows)) {
     try {
-      const stored = safeStorage.getItem("myDNADiet_userIntolerances");
-      if (stored) {
-        const data = JSON.parse(stored);
-        if (data.name && data.name !== "My Profile") {
-          currentProfileName = data.name;
-          console.log("Updated currentProfileName to:", currentProfileName);
-          
-          // Update the intolerances object with the correct profile name
-          intolerances[currentProfileName] = userIntolerances.map(item => item.item);
-        }
-      }
-    } catch (error) {
-      console.error("Error updating profile name:", error);
-    }
+      const stored = safeStorage.getItem(`myDNADiet_profile_${petName}`);
+      if (stored) rows = JSON.parse(stored).intolerances;
+    } catch (error) { console.warn('Selected profile could not be read.'); }
   }
-
-  const buttons = document.querySelectorAll(".pet-button");
-  buttons.forEach((btn) => {
-    btn.classList.remove("active");
-    if (btn.textContent.includes(petName)) {
-      btn.classList.add("active");
-    }
-  });
-
-  // If user profile is selected and it's empty, show helpful message
-  if (petName === "My Profile" && userIntolerances.length === 0) {
-    document.getElementById("scanResults").innerHTML = `
-      <div class="section" style="text-align: center; padding: 40px;">
-        <h3>👤 My Profile</h3>
-        <p style="font-size: 18px; margin: 20px 0;">Your personal intolerance profile is empty.</p>
-        <p style="margin: 20px 0;">Add your intolerances to start scanning food labels!</p>
-        <button onclick="openUploadModal()" style="background-color: #20c997; color: white; border: none; border-radius: 8px; padding: 15px 30px; font-size: 18px; cursor: pointer; margin-top: 20px;">
-          📤 Add My Intolerances
-        </button>
-      </div>
-    `;
-    return;
-  }
-
-  // Load per-profile intolerances from storage (local-only key)
+  if (!Array.isArray(rows)) rows = Object.hasOwn(intolerances, petName) ? intolerances[petName] : [];
+  userIntolerances = normalizeProfileRows(rows);
+  userIntoleranceList = userIntolerances.map(row => row.item);
+  Object.defineProperty(intolerances, petName, {value: [...userIntoleranceList], writable: true, enumerable: true, configurable: true});
   try {
-    const key = `myDNADiet_profile_${petName}`;
-    const stored = safeStorage.getItem(key);
-    if (stored) {
-      const data = JSON.parse(stored);
-      if (Array.isArray(data.intolerances)) {
-        const raw = data.intolerances;
-        if (raw.length && typeof raw[0] === 'string') {
-          intolerances[petName] = raw.map(s => ('' + s).toLowerCase().trim()).filter(Boolean);
-        } else {
-          intolerances[petName] = raw
-            .map(x => (x && x.item != null ? String(x.item) : ''))
-            .map(s => s.toLowerCase().trim())
-            .filter(Boolean);
-        }
-      }
-    }
-  } catch (e) {
-    console.warn('Profile load warning:', e);
-  }
-
+    writeProfileStorage({currentProfile: petName, myDNADiet_lastActiveProfile: petName});
+  } catch (error) { reportProfileSaveFailure(); }
+  const label = document.getElementById('activeProfileName');
+  if (label) label.textContent = petName;
+  renderActiveProfile();
+  document.querySelectorAll('.pet-button').forEach(button => {
+    button.classList.toggle('active', button.textContent.replace(/^👤\s*/, '').trim() === petName);
+  });
+  const results = document.getElementById('scanResults');
+  if (results) results.replaceChildren(); // A result for the old profile must not remain on screen.
+  const manualResults = document.getElementById('testIngredientResults');
+  if (manualResults) manualResults.replaceChildren();
+  const dietResults = document.getElementById('dietPlanResultsModal');
+  if (dietResults) dietResults.replaceChildren();
+  loadCurrentIntolerances();
   renderIntolerances();
+  showUserProfileButton();
 }
 
 // Remove Profile Function
@@ -2209,7 +2170,7 @@ function renderIntolerances() {
   if (currentPet && currentPet !== "My Profile") {
     const profileNameDiv = document.createElement("div");
     profileNameDiv.style.cssText = "background: linear-gradient(135deg, #e8f5e8, #f0f8ff); padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; border-left: 4px solid #4b0082;";
-    profileNameDiv.innerHTML = `<h4 style="margin: 0; color: #4b0082;">👤 Active Profile: ${currentPet}</h4>`;
+    profileNameDiv.innerHTML = `<h4 style="margin: 0; color: #4b0082;">👤 Active Profile: ${escapeHTML(currentPet)}</h4>`;
     
     const scanResults = document.getElementById("scanResults");
     if (scanResults.firstChild) {
@@ -2223,22 +2184,11 @@ function renderIntolerances() {
 // User intolerance data only - no test subjects
 let userIntoleranceList = [];
 
-/** Lowercased intolerance strings merged from user list + active profile keys (scan + test modal). */
+/** Match only the selected profile. Stale editor/legacy lists must never be merged. */
 function getActiveIntoleranceStringsForMatching() {
-  const merged = [];
-  const addFrom = (arr) => {
-    if (!Array.isArray(arr)) return;
-    for (const x of arr) {
-      if (typeof x === 'string') merged.push(x);
-      else if (x && typeof x.item === 'string') merged.push(x.item);
-    }
-  };
-  addFrom(userIntoleranceList);
-  if (typeof currentPet === 'string') addFrom(intolerances[currentPet]);
-  if (typeof currentProfileName === 'string' && currentProfileName !== currentPet) {
-    addFrom(intolerances[currentProfileName]);
-  }
-  return [...new Set(merged.map(s => ('' + s).toLowerCase().trim()).filter(Boolean))];
+  const rows = typeof currentPet === 'string' && Object.hasOwn(intolerances, currentPet)
+    ? intolerances[currentPet] : [];
+  return [...new Set(normalizeProfileRows(rows).map(row => row.item.toLowerCase().trim()).filter(Boolean))];
 }
 
 function ingredientTokenMatchesIntolerances(ingredientToken, lowerIntolerances) {
@@ -2546,6 +2496,7 @@ function uploadImage(event) {
 // Modern Tesseract.js Processing
 function processImage(imageBlob) {
   if (isProcessing) return;
+  const scanProfile = currentPet;
   
   isProcessing = true;
   showProcessingStatus();
@@ -2567,7 +2518,7 @@ function processImage(imageBlob) {
 
   Tesseract.recognize(imageBlob, tesseractConfig)
     .then(({ data: { text } }) => {
-      console.log("Raw OCR Result:", text);
+      if (currentPet !== scanProfile) throw new Error("Profile changed. Scan again for the selected profile.");
       
       if (!text || text.trim().length < 5) {
         throw new Error("Could not read enough text from image. Please try a clearer photo.");
@@ -2575,7 +2526,6 @@ function processImage(imageBlob) {
       
       // Clean up the text with improved filtering
       const cleanedText = cleanOCRText(text);
-      console.log("Cleaned OCR Result:", cleanedText);
       
       if (cleanedText.trim().length < 5) {
         throw new Error("Text too short after cleaning. Please try a clearer photo.");
@@ -2624,17 +2574,17 @@ function hideProcessingStatus() {
 
 function updateProcessingStatus(message) {
   const statusDiv = document.getElementById("scanStatus");
-  statusDiv.innerHTML = `<div style="color: #4b0082; font-weight: bold;">🔄 ${message}</div>`;
+  statusDiv.innerHTML = `<div style="color: #4b0082; font-weight: bold;">🔄 ${escapeHTML(message)}</div>`;
 }
 
 function updateScanStatus(message) {
   const statusDiv = document.getElementById("scanStatus");
-  statusDiv.innerHTML = `<div style="color: #333; font-weight: bold;">${message}</div>`;
+  statusDiv.innerHTML = `<div style="color: #333; font-weight: bold;">${escapeHTML(message)}</div>`;
 }
 
 function showError(message) {
   const statusDiv = document.getElementById("scanStatus");
-  statusDiv.innerHTML = `<div style="color: red; margin: 10px 0; padding: 10px; background-color: #ffe6e6; border-radius: 8px;">${message}</div>`;
+  statusDiv.innerHTML = `<div style="color: red; margin: 10px 0; padding: 10px; background-color: #ffe6e6; border-radius: 8px;">${escapeHTML(message)}</div>`;
 }
 
 function hideError() {
@@ -2696,7 +2646,7 @@ function scanIngredients(text) {
     summaryDiv.style.cssText = "background-color: #ffcccc; color: red; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #dc3545;";
     summaryDiv.innerHTML = `
       <div style="font-size: 16px; margin-bottom: 5px;">⚠️ Found ${foundIntolerances.length} intolerance(s)</div>
-      <div style="font-size: 14px; font-weight: normal;">${foundIntolerances.join(', ')}</div>
+      <div style="font-size: 14px; font-weight: normal;">${foundIntolerances.map(escapeHTML).join(', ')}</div>
     `;
     resultsContainer.insertBefore(summaryDiv, resultsContainer.firstChild);
   } else {
@@ -2761,11 +2711,11 @@ function testFood() {
 
   if (flagged.length > 0) {
     resultDiv.innerHTML = `
-      <p>⚠️ The following ingredients may be problematic for <strong>${currentPet}</strong>:</p>
-      <ul>${flagged.map(i => `<li style="color: red;">${i}</li>`).join("")}</ul>
+      <p>⚠️ The following ingredients may be problematic for <strong>${escapeHTML(currentPet)}</strong>:</p>
+      <ul>${flagged.map(i => `<li style="color: red;">${escapeHTML(i)}</li>`).join("")}</ul>
     `;
   } else {
-    resultDiv.innerHTML = `<p style="color: green;">✅ No known intolerances found for <strong>${currentPet}</strong>.</p>`;
+    resultDiv.innerHTML = `<p style="color: green;">✅ No known intolerances found for <strong>${escapeHTML(currentPet)}</strong>.</p>`;
   }
 }
 
@@ -2779,12 +2729,12 @@ function viewDiet() {
     return;
   }
 
-  // Lock in current profile immediately — merged intolerance list (same as scan / test modal)
+  // Lock in the selected profile and its intolerance list
   const currentProfile = currentPet;
   const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
 
   // Show processing status
-  resultDiv.innerHTML = `<p>🔄 Processing ${file.name}... This may take a few seconds.</p>`;
+  resultDiv.innerHTML = `<p>🔄 Processing ${escapeHTML(file.name)}... This may take a few seconds.</p>`;
 
   const fileName = file.name.toLowerCase();
   const fileType = file.type;
@@ -2806,7 +2756,7 @@ function viewDiet() {
     }
   } catch (error) {
     console.error("Error processing diet plan file:", error);
-    resultDiv.innerHTML = `<p style="color: red;">❌ Error processing file: ${error.message}</p>`;
+    resultDiv.innerHTML = `<p style="color: red;">❌ Error processing file: ${escapeHTML(error.message)}</p>`;
   }
 }
 
@@ -2914,8 +2864,8 @@ function loadCurrentIntolerances() {
     const levelText = item.level === 3 ? "Severe" : item.level === 2 ? "Moderate" : "Mild";
     
     div.innerHTML = `
-      <span style="font-weight: bold;">${item.item}</span>
-      <span style="color: #666;">${item.category}</span>
+      <span style="font-weight: bold;">${escapeHTML(item.item)}</span>
+      <span style="color: #666;">${escapeHTML(item.category)}</span>
       <span style="background: ${levelColor}; padding: 2px 8px; border-radius: 12px; font-size: 12px;">${levelText}</span>
       <button onclick="removeIntoleranceItem(${index})" style="background: #dc3545; color: white; border: none; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 12px;">❌</button>
     `;
@@ -2959,6 +2909,7 @@ function addIntoleranceItem() {
 function removeIntoleranceItem(index) {
   userIntolerances.splice(index, 1);
   loadCurrentIntolerances();
+  autoSaveIntolerances();
 }
 
 // Process uploaded file based on type
@@ -3027,9 +2978,12 @@ function showUploadStatus(message, type = "info") {
 
 // Process JSON files
 function processJSONFile(file) {
+  const importProfile = currentProfileName;
+  const importSelection = currentPet;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = async function(e) {
     try {
+      if (currentPet !== importSelection) { showUploadStatus("Profile changed. Choose the file again for the selected profile.", "warning"); return; }
       const data = JSON.parse(e.target.result);
       
       if (!data.intolerances || !Array.isArray(data.intolerances)) {
@@ -3039,24 +2993,31 @@ function processJSONFile(file) {
       
       // Validate each intolerance item
       const validIntolerances = data.intolerances.filter(item => 
-        item.item && item.category && item.level && 
+        item && typeof item.item === 'string' && item.item.trim() && typeof item.category === 'string' &&
         [1, 2, 3].includes(item.level)
       );
       
-      if (validIntolerances.length === 0) {
+      if (validIntolerances.length !== data.intolerances.length) {
         showUploadStatus("No valid intolerance items found in the JSON file.", "error");
         return;
       }
       
+      const name = typeof data.name === 'string' && data.name.trim() ? data.name.trim() : importProfile;
+      if (Object.hasOwn(profileData, name) &&
+          !confirm('Replace the matching profile with this imported copy?')) return;
+      profileData[name] = {...profileData[name], ...data, intolerances: validIntolerances};
       // Update user intolerances directly
       userIntolerances = validIntolerances;
-      currentProfileName = "My Profile";
+      currentProfileName = typeof data.name === "string" && data.name.trim() ? data.name.trim() : currentProfileName;
+      currentPet = currentProfileName;
+      currentProfile = currentProfileName;
       
       // Update the simple user intolerance list for scanning
       userIntoleranceList = validIntolerances.map(item => item.item);
       
       // Save to localStorage
-      autoSaveIntolerances();
+      if (!await autoSaveIntolerances()) return;
+      selectPet(currentProfileName);
       
       // Refresh the UI
       loadCurrentIntolerances();
@@ -3079,6 +3040,8 @@ function processJSONFile(file) {
 
 // Process CSV and TXT files
 function processTextFile(file) {
+  const importProfile = currentProfileName;
+  const importSelection = currentPet;
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
@@ -3123,6 +3086,8 @@ function processTextFile(file) {
 
 // Process DOCX files
 function processDocxFile(file) {
+  const importProfile = currentProfileName;
+  const importSelection = currentPet;
   const reader = new FileReader();
   const fileName = file.name.toLowerCase();
   
@@ -3136,7 +3101,8 @@ function processDocxFile(file) {
           
           if (intolerances.length > 0) {
             // Get the currently selected profile
-            const currentProfile = currentPet || "Mocha";
+            const currentProfile = importProfile;
+        if (currentPet !== importSelection) { showUploadStatus("Profile changed. Choose the file again for the selected profile.", "warning"); return; }
             
             // Create unified intolerance object structure
             const intoleranceData = intolerances.map(item => ({
@@ -3150,12 +3116,10 @@ function processDocxFile(file) {
             if (!profileData[currentProfile]) profileData[currentProfile] = {};
             profileData[currentProfile].intolerances = intoleranceData;
             
-            // Save to localStorage
-            saveAllProfiles();
-            
             // Update current intolerances for UI
             userIntolerances = intoleranceData;
             currentProfileName = currentProfile;
+            try { persistActiveProfile(); } catch (error) { reportProfileSaveFailure(); return; }
             
             // Refresh the UI
             loadCurrentIntolerances();
@@ -3281,15 +3245,18 @@ function displayExtractedIngredients(ingredients) {
       <p style="margin: 0 0 10px 0; font-size: 14px;">Review the ingredients below and add intolerances manually:</p>
       <div style="max-height: 200px; overflow-y: auto; background: white; border-radius: 6px; padding: 10px; border: 1px solid #ddd;">
         ${ingredients.map(ingredient => 
-          `<div style="padding: 5px; margin: 2px 0; background: #f8f9fa; border-radius: 4px; font-size: 14px;">${ingredient}</div>`
+          `<div style="padding: 5px; margin: 2px 0; background: #f8f9fa; border-radius: 4px; font-size: 14px;">${escapeHTML(ingredient)}</div>`
         ).join('')}
       </div>
-      <button onclick="addExtractedIngredients('${ingredients.join('|')}')" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; margin-top: 10px;">
+      <button id="addExtractedIngredientsButton" style="background-color: #28a745; color: white; border: none; border-radius: 4px; padding: 8px 16px; cursor: pointer; margin-top: 10px;">
         📝 Add All as Intolerances
       </button>
     </div>
   `;
   
+  statusDiv.querySelector('#addExtractedIngredientsButton').addEventListener('click', () => {
+    addExtractedIngredients(ingredients);
+  });
   statusDiv.style.display = "block";
   statusDiv.style.backgroundColor = "#17a2b8";
   statusDiv.style.color = "white";
@@ -3297,7 +3264,7 @@ function displayExtractedIngredients(ingredients) {
 
 // Add extracted ingredients as intolerances
 function addExtractedIngredients(ingredientsString) {
-  const ingredients = ingredientsString.split('|');
+  const ingredients = Array.isArray(ingredientsString) ? ingredientsString : ingredientsString.split('|');
   
   ingredients.forEach(ingredient => {
     if (ingredient.trim()) {
@@ -3324,91 +3291,86 @@ function addExtractedIngredients(ingredientsString) {
   document.getElementById("fileUpload").value = "";
 }
 
-// Save intolerances to localStorage and cloud
-async function saveIntolerances() {
-  // Guard: initialize containers in local mode
-  if (!window.intolerances) window.intolerances = {};
-  if (!Array.isArray(userIntolerances)) userIntolerances = [];
+// Rich profile rows are preserved; matching receives only ingredient names.
+function normalizeProfileRows(rows) {
+  return (Array.isArray(rows) ? rows : []).map(row => {
+    if (typeof row === 'string') return { item: row, category: 'Other', level: 2 };
+    return row && typeof row.item === 'string' ? { ...row } : null;
+  }).filter(Boolean);
+}
 
-  if (userIntolerances.length === 0) {
-    alert("Please add some items first.");
-    return;
+function reportProfileSaveFailure() {
+  const message = 'Changes could not be saved on this device. Keep this page open and export a backup before reloading.';
+  const status = document.getElementById('uploadStatus');
+  if (status) showUploadStatus(message, 'error');
+  let banner = document.getElementById('profileSaveError');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'profileSaveError';
+    banner.setAttribute('role', 'alert');
+    banner.style.cssText = 'background:#fff3cd;color:#721c24;padding:12px;margin:12px 0;border:2px solid #dc3545;';
+    (document.getElementById('app-content') || document.body).prepend(banner);
   }
-  
+  banner.textContent = message;
+}
+
+function profileStorageSnapshot() {
+  const result = Object.create(null);
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key === 'profileData' || key === 'currentProfile' || key === 'myDNADiet_lastActiveProfile' ||
+        key === 'myDNADiet_allProfiles' || key === 'myDNADiet_profileData' ||
+        key === 'myDNADiet_userIntolerances' || key.startsWith('myDNADiet_profile_')) {
+      result[key] = localStorage.getItem(key);
+    }
+  }
+  return result;
+}
+
+function writeProfileStorage(entries) {
+  if (profileStorageReadError) throw new Error('Unreadable profile storage is preserved for recovery');
+  // One recovery snapshot before the first profile write by this patch. No auth data.
+  const backupKey = 'myDNADiet_stabilizationBackup_v1';
+  if (!localStorage.getItem(backupKey)) {
+    localStorage.setItem(backupKey, JSON.stringify({version: 1, storage: profileStorageSnapshot()}));
+  }
+  const previous = new Map();
   try {
-    const data = {
-      name: currentProfileName,
-      type: "user",
-      intolerances: userIntolerances,
-      lastUpdated: new Date().toISOString()
-    };
-    
-    // Use safe storage wrapper to avoid conflicts with other apps
-    safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
-    // Also save per-profile key for separation
-    try {
-      const perProfile = {
-        name: currentProfileName,
-        intolerances: userIntolerances.map(i => i.item),
-        updatedAt: Date.now(),
-      };
-      safeStorage.setItem(`myDNADiet_profile_${currentProfileName}`, JSON.stringify(perProfile));
-    } catch (e) {
-      console.warn('Per-profile save warning:', e);
+    for (const [key, value] of Object.entries(entries)) {
+      previous.set(key, localStorage.getItem(key));
+      localStorage.setItem(key, value);
     }
-    
-    // Add to the main intolerances object
-    intolerances[currentProfileName] = userIntolerances.map(item => item.item);
-    
-    // Update profileData
-    if (!profileData) profileData = {};
-    profileData[currentProfileName] = {
-      intolerances: userIntolerances,
-      type: "user",
-      lastUpdated: new Date().toISOString()
-    };
-    
-    // Save to cloud if authenticated and online
-    if (BETA_LOCAL_FIRST) {
-      if (isAuthenticated && isOnline) {
-        try {
-          await saveUserCloudData();
-        } catch (e) {
-          console.warn('Optional cloud sync failed:', e);
-        }
-      }
-      alert("💾 Saved on this device. Your data stays in this browser until you export or clear site data.");
-    } else if (isAuthenticated && isOnline) {
-      const cloudSuccess = await saveUserCloudData();
-      if (cloudSuccess) {
-        alert("💾 Saved to GitHub (private) + this device.");
-      } else {
-        alert("💾 Saved locally. Cloud sync failed - will retry when online.");
-      }
-    } else if (isAuthenticated && !isOnline) {
-      alert("💾 Saved locally. Will sync to GitHub when online.");
-    } else {
-      alert("💾 Saved locally (no login). You can sync later by logging in.");
-    }
-    
-    // Show user profile button
-    showUserProfileButton();
-    
-    // Refresh the main display
-    renderIntolerances();
-    
+    document.getElementById('profileSaveError')?.remove();
   } catch (error) {
-    alert("Error saving intolerances: " + error.message);
+    // Restore previous values if a multi-key write is interrupted.
+    for (const [key, value] of previous) {
+      try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value); }
+      catch (rollbackError) { /* Recovery snapshot remains available. */ }
+    }
+    throw error;
   }
+}
+
+function persistActiveProfile() {
+  const name = currentProfileName;
+  if (typeof name !== 'string' || !name.trim()) throw new Error('Select a profile before saving');
+  const rows = normalizeProfileRows(userIntolerances);
+  profileData[name] = { ...profileData[name], name, type: profileData[name]?.type || 'user',
+    intolerances: rows, lastUpdated: new Date().toISOString() };
+  Object.defineProperty(intolerances, name, {value: rows.map(row => row.item), writable: true, enumerable: true, configurable: true});
+  userIntoleranceList = rows.map(row => row.item);
+  if (!saveAllProfiles()) throw new Error('Profile save failed');
+}
+
+async function saveIntolerances() {
+  if (!await autoSaveIntolerances()) return false;
+  if (!BETA_LOCAL_FIRST && isAuthenticated && isOnline) await saveUserCloudData();
+  alert('Saved on this device. Export a backup to keep a separate copy.');
+  return true;
 }
 
 // Export current intolerances as JSON
 function exportCurrentIntolerances() {
-  if (userIntolerances.length === 0) {
-    alert("No intolerances to export. Please add some items first.");
-    return;
-  }
-  
   const data = {
     name: currentProfileName,
     type: "user",
@@ -3459,211 +3421,103 @@ function clearAppData() {
   }
 }
 
-// Auto-save intolerances to localStorage and cloud
+// Save empty lists as well as populated lists.
 async function autoSaveIntolerances() {
-  if (userIntolerances.length > 0) {
-    try {
-      const data = {
-        name: currentProfileName,
-        type: "user",
-        intolerances: userIntolerances,
-        lastUpdated: new Date().toISOString()
-      };
-      
-      // Use safe storage wrapper to avoid conflicts with other apps
-      safeStorage.setItem("myDNADiet_userIntolerances", JSON.stringify(data));
-      // Also save per-profile key for separation
-      try {
-        const perProfile = {
-          name: currentProfileName,
-          intolerances: userIntolerances.map(i => i.item),
-          updatedAt: Date.now(),
-        };
-        safeStorage.setItem(`myDNADiet_profile_${currentProfileName}`, JSON.stringify(perProfile));
-      } catch (e) {
-        console.warn('Per-profile save warning:', e);
-      }
-      
-      // Update the simple user intolerance list for scanning
-      userIntoleranceList = userIntolerances.map(item => item.item);
-      
-      // Add to main intolerances object with proper profile name
-      intolerances[currentProfileName] = userIntolerances.map(item => item.item);
-      
-      // Update profileData with the new intolerances
-      if (!profileData) profileData = {};
-      profileData[currentProfileName] = {
-        intolerances: userIntolerances,
-        type: "user",
-        lastUpdated: new Date().toISOString()
-      };
-      
-      // Save all profiles to localStorage for persistence using the new system
-      saveAllProfiles();
-      
-      // Save to cloud only when not in local-first beta (avoids surprise network / gist writes)
-      if (!BETA_LOCAL_FIRST && isAuthenticated && isOnline) {
-        await saveUserCloudData();
-        safeLog("✅ Auto-saved intolerances to cloud for profile:", currentProfileName);
-      } else if (!BETA_LOCAL_FIRST && isAuthenticated && !isOnline) {
-        safeLog("⚠️ Auto-saved locally - will sync when online");
-      }
-      
-      // Show user profile button
-      showUserProfileButton();
-      
-      console.log("✅ Auto-saved intolerances to localStorage for profile:", currentProfileName);
-      console.log("✅ Updated userIntoleranceList for scanning:", userIntoleranceList.length, "items");
-      
-      // Show user notification
-      showDataSavedNotification();
-    } catch (error) {
-      console.error("❌ Error auto-saving intolerances:", error);
-    }
+  try {
+    persistActiveProfile();
+    showUserProfileButton();
+    showDataSavedNotification();
+    return true;
+  } catch (error) {
+    reportProfileSaveFailure();
+    return false;
   }
 }
 
-// Save all profiles to localStorage for persistence
 function saveAllProfiles() {
   try {
-    // Save the new profileData structure using the Profile Management System
-    localStorage.setItem("profileData", JSON.stringify(profileData));
-    
-    // Also save the old format for backward compatibility
-    const allProfiles = {
-      profiles: {},
-      lastUpdated: new Date().toISOString()
+    const profiles = Object.create(null);
+    for (const name of new Set([...Object.keys(intolerances), ...Object.keys(profileData)])) {
+      profiles[name] = { ...profileData[name], name,
+        intolerances: normalizeProfileRows(profileData[name]?.intolerances || intolerances[name]),
+        type: profileData[name]?.type || 'example' };
+    }
+    const entries = {
+      profileData: JSON.stringify(profileData),
+      myDNADiet_allProfiles: JSON.stringify({profiles, lastUpdated: new Date().toISOString()})
     };
-    
-    // Save each profile
-    Object.keys(intolerances).forEach(profileName => {
-      allProfiles.profiles[profileName] = {
-        name: profileName,
-        intolerances: intolerances[profileName],
-        type: profileName === currentProfileName ? "user" : "example"
-      };
-    });
-    
-    // Save to localStorage
-    safeStorage.setItem("myDNADiet_allProfiles", JSON.stringify(allProfiles));
-    console.log("✅ Saved all profiles to localStorage:", Object.keys(allProfiles.profiles));
-    console.log("✅ Saved profileData structure:", Object.keys(profileData));
+    for (const [name, profile] of Object.entries(profiles)) {
+      entries[`myDNADiet_profile_${name}`] = JSON.stringify(profile);
+    }
+    if (Object.hasOwn(profileData, currentProfileName)) {
+      entries.myDNADiet_userIntolerances = JSON.stringify({...profileData[currentProfileName], name: currentProfileName});
+    }
+    writeProfileStorage(entries);
+    return true;
   } catch (error) {
-    console.error("❌ Error saving all profiles:", error);
+    reportProfileSaveFailure();
+    return false;
   }
 }
 
-// Load all profiles from localStorage on app start
 function loadAllProfilesFromStorage() {
   try {
-    const stored = safeStorage.getItem("myDNADiet_allProfiles");
-    if (stored) {
-      const data = JSON.parse(stored);
-      if (data.profiles) {
-        // Restore all profiles
-        Object.keys(data.profiles).forEach(profileName => {
-          const profile = data.profiles[profileName];
-          if (profile.intolerances && Array.isArray(profile.intolerances)) {
-            intolerances[profileName] = profile.intolerances;
-            console.log("✅ Restored profile:", profileName, "with", profile.intolerances.length, "intolerances");
-            
-            // If this is a user profile, load it as the current profile
-            if (profile.type === "user") {
-              const arr = profile.intolerances;
-              if (Array.isArray(arr) && arr.length > 0) {
-                if (typeof arr[0] === 'string') {
-                  userIntolerances = arr.map(item => ({ item, category: 'Other', level: 2 }));
-                  userIntoleranceList = arr.map(s => ('' + s).trim()).filter(Boolean);
-                } else {
-                  userIntolerances = arr;
-                  userIntoleranceList = arr.map(item => (item && item.item != null ? String(item.item) : '')).filter(Boolean);
-                }
-              } else {
-                userIntolerances = [];
-                userIntoleranceList = [];
-              }
-              currentProfileName = profileName;
-              console.log("✅ Set as current user profile:", profileName);
-            }
-          }
-        });
-      }
+    const stored = safeStorage.getItem('myDNADiet_allProfiles');
+    const profiles = stored ? JSON.parse(stored).profiles : {};
+    for (const [name, profile] of Object.entries(profiles || {})) {
+      if (!Array.isArray(profile.intolerances)) continue;
+      // Rich canonical rows win over older string-only snapshots, including empty lists.
+      if (!Object.hasOwn(profileData, name)) profileData[name] = {...profile, intolerances: normalizeProfileRows(profile.intolerances)};
     }
-  } catch (error) {
-    console.error("❌ Error loading all profiles from storage:", error);
-  }
+    // Some older versions saved only per-profile keys. Include them in backups/restores.
+    for (const key of safeStorage.getAppKeys().filter(key => key.startsWith('myDNADiet_profile_'))) {
+      try {
+        const profile = JSON.parse(safeStorage.getItem(key));
+        const name = key.slice('myDNADiet_profile_'.length);
+        if (profile && Array.isArray(profile.intolerances) && !Object.hasOwn(profileData, name)) {
+          profileData[name] = {...profile, name, intolerances: normalizeProfileRows(profile.intolerances)};
+        }
+      } catch (error) { console.warn('A legacy profile remains available in the raw recovery snapshot.'); }
+    }
+    for (const [name, profile] of Object.entries(profileData)) {
+      Object.defineProperty(intolerances, name, {value: normalizeProfileRows(profile.intolerances).map(row => row.item), writable:true, enumerable:true, configurable:true});
+    }
+  } catch (error) { console.error('Stored profile snapshot could not be read; original data preserved.'); }
+}
+            
+// Restore the existing example seeds without logging their contents.
+async function loadIntoleranceData() {
+  const files = ['don-data.json', 'lora-data.json', 'mocha-data.json', 'punkin-data.json'];
+  await Promise.all(files.map(async file => {
+    try {
+      const response = await fetch(file);
+      if (!response.ok) throw new Error('Profile unavailable');
+      const profile = await response.json();
+      if (typeof profile.name !== 'string' || !Array.isArray(profile.intolerances)) return;
+      if (!Object.hasOwn(profileData, profile.name)) {
+        profileData[profile.name] = {...profile, intolerances: normalizeProfileRows(profile.intolerances)};
+        Object.defineProperty(intolerances, profile.name, {value: profileData[profile.name].intolerances.map(row => row.item), writable:true, enumerable:true, configurable:true});
+      }
+    } catch (error) { console.warn('An example profile is unavailable; personal profiles are unaffected.'); }
+  }));
 }
 
 // Migrate old data to new system
 function migrateOldDataToNewSystem() {
-  try {
-    // Check if we have old data but no new data
-    const oldData = safeStorage.getItem("myDNADiet_userIntolerances");
-    if (oldData && userIntolerances.length === 0) {
-      const data = JSON.parse(oldData);
-      if (data.intolerances && data.intolerances.length > 0) {
-        console.log("🔄 Migrating old data to new system...");
-        
-        // Set the data
-        userIntolerances = data.intolerances;
-        currentProfileName = data.name || "My Profile";
-        userIntoleranceList = userIntolerances.map(item => item.item);
-        
-        // Add to new system
-        intolerances[currentProfileName] = userIntoleranceList;
-        
-        // Update profileData
-        if (!profileData[currentProfileName]) {
-          profileData[currentProfileName] = {
-            name: currentProfileName,
-            type: "user",
-            intolerances: userIntolerances,
-            lastUpdated: new Date().toISOString()
-          };
-        }
-        
-        // Save to new system
-        saveAllProfiles();
-        
-        console.log("✅ Migration complete! Moved", userIntolerances.length, "intolerances to new system");
-      }
-    }
-  } catch (error) {
-    console.error("❌ Error migrating old data:", error);
-  }
+  // Legacy data is hydrated without writes; never replace a canonical empty profile.
+  loadUserIntolerancesFromStorage();
 }
 
 // Load user intolerances from localStorage on app start
 function loadUserIntolerancesFromStorage() {
   try {
-    // Use safe storage wrapper to avoid conflicts with other apps
-    const stored = safeStorage.getItem("myDNADiet_userIntolerances");
-    if (stored) {
-      const data = JSON.parse(stored);
-      userIntolerances = data.intolerances || [];
-      currentProfileName = data.name || "My Profile";
-      
-      // Update the simple user intolerance list for scanning
-      userIntoleranceList = userIntolerances.map(item => item.item);
-      
-      // Add to main intolerances object with proper profile name
-      intolerances[currentProfileName] = userIntolerances.map(item => item.item);
-      
-      // Show user profile button
-      showUserProfileButton();
-      
-      console.log("✅ Loaded user intolerances from storage:", userIntolerances.length, "items for profile:", currentProfileName);
-      console.log("✅ Updated userIntoleranceList for scanning:", userIntoleranceList.length, "items");
-      
-      // If this is the first load and we have a user profile, select it by default
-      if (userIntolerances.length > 0 && !safeStorage.getItem("myDNADiet_profileSelected")) {
-        selectPet(currentProfileName);
-        safeStorage.setItem("myDNADiet_profileSelected", "true");
-      }
-    }
-  } catch (error) {
-    console.error("❌ Error loading user intolerances from storage:", error);
-  }
+    const stored = safeStorage.getItem('myDNADiet_userIntolerances');
+    if (!stored) return;
+    const data = JSON.parse(stored);
+    const name = typeof data.name === 'string' ? data.name : 'My Profile';
+    if (!Object.hasOwn(profileData, name)) profileData[name] = {...data, intolerances: normalizeProfileRows(data.intolerances)};
+    Object.defineProperty(intolerances, name, {value: normalizeProfileRows(profileData[name].intolerances).map(row => row.item), writable:true, enumerable:true, configurable:true});
+  } catch (error) { console.warn('Legacy profile could not be read; original data preserved.'); }
 }
 
 // Show user profile button if user has intolerances
@@ -3672,7 +3526,7 @@ function showUserProfileButton() {
   console.log("🔍 showUserProfileButton called - userIntolerances.length:", userIntolerances.length);
   console.log("🔍 showUserProfileButton called - currentProfileName:", currentProfileName);
   
-  if (userIntolerances.length > 0) {
+  if (Object.hasOwn(profileData, currentProfileName)) {
     userProfileBtn.style.display = "inline-block";
     
     // Update the button text to show the actual profile name
@@ -3688,8 +3542,7 @@ function showUserProfileButton() {
   }
 }
 
-// Call this function when the app loads
-loadUserIntolerancesFromStorage();
+// Profile loading is ordered in DOMContentLoaded.
 
 // Show data saved notification
 function showDataSavedNotification() {
@@ -3773,7 +3626,7 @@ function ensureProfileNameConsistency() {
 }
 
 // Call this after loading user intolerances
-setTimeout(ensureProfileNameConsistency, 100);
+// Do not overwrite the selected profile with the legacy last-edited profile.
 
 // Debug function to log current state
 function logCurrentState() {
@@ -3797,55 +3650,13 @@ function logCurrentState() {
 }
 
 // Log state after a delay to help with debugging
-setTimeout(logCurrentState, 500);
+// No automatic logging of stored personal profile contents.
 
 // Function to refresh profile data from localStorage
 function refreshProfileData() {
-  try {
-    console.log("🔄 Refreshing profile data...");
-    
-    // Reload user intolerances from storage
-    const stored = safeStorage.getItem("myDNADiet_userIntolerances");
-    if (stored) {
-      const data = JSON.parse(stored);
-      userIntolerances = data.intolerances || [];
-      currentProfileName = data.name || "My Profile";
-      
-      // Update the intolerances object with the correct profile name
-      intolerances[currentProfileName] = userIntolerances.map(item => item.item);
-      
-      // Show user profile button
-      showUserProfileButton();
-      
-      // Refresh the display
-      loadCurrentIntolerances();
-      
-      // Update the main app display
-      if (currentPet === "My Profile" || currentPet === currentProfileName) {
-        renderIntolerances();
-      }
-      
-      console.log("✅ Profile data refreshed successfully");
-      console.log("Profile name:", currentProfileName);
-      console.log("Intolerances count:", userIntolerances.length);
-      
-      // Show success message
-      const statusDiv = document.getElementById("uploadStatus");
-      if (statusDiv) {
-        showUploadStatus(`Profile refreshed: ${currentProfileName} (${userIntolerances.length} intolerances)`, "success");
-      }
-    } else {
-      console.log("No stored profile data found");
-      if (document.getElementById("uploadStatus")) {
-        showUploadStatus("No stored profile data found", "warning");
-      }
-    }
-  } catch (error) {
-    console.error("❌ Error refreshing profile data:", error);
-    if (document.getElementById("uploadStatus")) {
-      showUploadStatus("Error refreshing profile data: " + error.message, "error");
-    }
-  }
+  loadProfileDataFromStorage();
+  loadAllProfilesFromStorage();
+  selectPet(currentPet);
 }
 
 // Function to show debug information
@@ -3856,8 +3667,8 @@ function showDebugInfo() {
   try {
     const stored = safeStorage.getItem("myDNADiet_userIntolerances");
     let debugHTML = "<strong>Current App State:</strong><br>";
-    debugHTML += `• Current Pet: ${currentPet}<br>`;
-    debugHTML += `• Current Profile Name: ${currentProfileName}<br>`;
+    debugHTML += `• Current Pet: ${escapeHTML(currentPet)}<br>`;
+    debugHTML += `• Current Profile Name: ${escapeHTML(currentProfileName)}<br>`;
     debugHTML += `• User Intolerances Count: ${userIntolerances.length}<br>`;
     debugHTML += `• Available Profiles: ${Object.keys(intolerances).join(", ")}<br>`;
     debugHTML += `• localStorage Keys: ${safeStorage.getAppKeys().join(", ")}<br><br>`;
@@ -3873,10 +3684,10 @@ function showDebugInfo() {
       debugHTML += "<strong>No stored profile data found</strong>";
     }
     
-    debugDiv.innerHTML = debugHTML;
+    debugDiv.textContent = debugHTML.replace(/<br>/g, "\n");
     debugDiv.style.display = "block";
   } catch (error) {
-    debugDiv.innerHTML = `<strong>Error getting debug info:</strong> ${error.message}`;
+    debugDiv.innerHTML = `<strong>Error getting debug info:</strong> ${escapeHTML(error.message)}`;
     debugDiv.style.display = "block";
   }
 }
@@ -3890,7 +3701,7 @@ function processDietTextFile(file, currentProfile, lowerCaseIntolerances, result
       const ingredients = contents.split(/[\n,]+/).map(line => line.trim()).filter(Boolean);
       analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntolerances, resultDiv);
     } catch (error) {
-      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading text file: ${error.message}</p>`;
+      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading text file: ${escapeHTML(error.message)}</p>`;
     }
   };
   reader.readAsText(file);
@@ -3932,7 +3743,7 @@ function processDietJsonFile(file, currentProfile, lowerCaseIntolerances, result
       const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
       analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
     } catch (error) {
-      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading JSON file: ${error.message}</p>`;
+      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading JSON file: ${escapeHTML(error.message)}</p>`;
     }
   };
   reader.readAsText(file);
@@ -3946,7 +3757,7 @@ function processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultD
       Papa.parse(content, {
         complete: function(results) {
           if (results.errors.length > 0) {
-            resultDiv.innerHTML = `<p style="color: red;">❌ Error parsing CSV: ${results.errors[0].message}</p>`;
+            resultDiv.innerHTML = `<p style="color: red;">❌ Error parsing CSV: ${escapeHTML(results.errors[0].message)}</p>`;
             return;
           }
           
@@ -3960,7 +3771,7 @@ function processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultD
         }
       });
     } catch (error) {
-      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading CSV file: ${error.message}</p>`;
+      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading CSV file: ${escapeHTML(error.message)}</p>`;
     }
   };
   reader.readAsText(file);
@@ -3982,11 +3793,11 @@ function processDietDocxFile(file, currentProfile, lowerCaseIntolerances, result
             resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in DOCX file.</p>`;
           }
         } catch (error) {
-          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing DOCX content: ${error.message}</p>`;
+          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing DOCX content: ${escapeHTML(error.message)}</p>`;
         }
       })
       .catch(function(error) {
-        resultDiv.innerHTML = `<p style="color: red;">❌ Error reading DOCX file: ${error.message}</p>`;
+        resultDiv.innerHTML = `<p style="color: red;">❌ Error reading DOCX file: ${escapeHTML(error.message)}</p>`;
       });
   };
   reader.readAsArrayBuffer(file);
@@ -4027,7 +3838,7 @@ function processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultD
             resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in PDF file.</p>`;
           }
         } catch (error) {
-          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing PDF content: ${error.message}</p>`;
+          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing PDF content: ${escapeHTML(error.message)}</p>`;
         }
       }).catch(function(error) {
         handleFileUploadError(error, file.name);
@@ -4041,6 +3852,7 @@ function processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultD
 
 // Common function to analyze diet ingredients
 function analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntolerances, resultDiv) {
+  if (currentPet !== currentProfile) return;
   const flagged = ingredients.filter(ingredient =>
     lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
   );
@@ -4049,14 +3861,14 @@ function analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntoleranc
     resultDiv.innerHTML = `
       <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 10px 0;">
         <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Diet Plan Analysis Results</h4>
-        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${currentProfile}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${escapeHTML(currentProfile)}</p>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Total Ingredients Analyzed:</strong> ${ingredients.length}</p>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Potential Issues Found:</strong> ${flagged.length}</p>
         
         <div style="background: #ffcccc; border: 1px solid #ffb3b3; border-radius: 6px; padding: 10px; margin: 10px 0;">
           <p style="margin: 0 0 10px 0; color: #721c24; font-weight: bold;">🚨 Problematic Ingredients:</p>
           <ul style="margin: 0; padding-left: 20px; color: #721c24;">
-            ${flagged.map(i => `<li>${i}</li>`).join("")}
+            ${flagged.map(i => `<li>${escapeHTML(i)}</li>`).join("")}
           </ul>
         </div>
         
@@ -4069,7 +3881,7 @@ function analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntoleranc
     resultDiv.innerHTML = `
       <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin: 10px 0;">
         <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Diet Plan Analysis Complete</h4>
-        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${currentProfile}</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${escapeHTML(currentProfile)}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Total Ingredients Analyzed:</strong> ${ingredients.length}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Issues Found:</strong> None! 🎉</p>
         
@@ -4141,14 +3953,14 @@ function testFoodIngredients() {
     resultDiv.innerHTML = `
       <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 15px; margin: 10px 0;">
         <h4 style="margin: 0 0 10px 0; color: #856404;">⚠️ Potential Issues Found</h4>
-        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${activeLabel}</p>
+        <p style="margin: 0 0 15px 0; color: #856404;"><strong>Profile:</strong> ${escapeHTML(activeLabel)}</p>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
         <p style="margin: 0 0 15px 0; color: #856404;"><strong>Issues Found:</strong> ${flagged.length}</p>
         
         <div style="background: #ffcccc; border: 1px solid #ffb3b3; border-radius: 6px; padding: 10px; margin: 10px 0;">
           <p style="margin: 0 0 10px 0; color: #721c24; font-weight: bold;">🚨 Problematic Ingredients:</p>
           <ul style="margin: 0; padding-left: 20px; color: #721c24;">
-            ${flagged.map(i => `<li>${i}</li>`).join("")}
+            ${flagged.map(i => `<li>${escapeHTML(i)}</li>`).join("")}
           </ul>
         </div>
         
@@ -4161,7 +3973,7 @@ function testFoodIngredients() {
     resultDiv.innerHTML = `
       <div style="background: #d4edda; border: 1px solid #c3e6cb; border-radius: 8px; padding: 15px; margin: 10px 0;">
         <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Analysis Complete</h4>
-        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${activeLabel}</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${escapeHTML(activeLabel)}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Issues Found:</strong> None! 🎉</p>
         
@@ -4190,12 +4002,12 @@ function analyzeDietPlan() {
     return;
   }
 
-  // Lock in current profile immediately — merged intolerance list (same as scan / test modal)
+  // Lock in the selected profile and its intolerance list
   const currentProfile = currentPet;
   const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
 
   // Show processing status
-  resultDiv.innerHTML = `<p style='text-align: center; padding: 10px; background-color: #e3f2fd; border-radius: 6px; color: #1976d2;'>🔄 Processing ${file.name}... This may take a few seconds.</p>`;
+  resultDiv.innerHTML = `<p style='text-align: center; padding: 10px; background-color: #e3f2fd; border-radius: 6px; color: #1976d2;'>🔄 Processing ${escapeHTML(file.name)}... This may take a few seconds.</p>`;
 
   const fileName = file.name.toLowerCase();
 
@@ -4216,12 +4028,14 @@ function analyzeDietPlan() {
     }
   } catch (error) {
     console.error("Error processing diet plan file:", error);
-    resultDiv.innerHTML = `<p style="color: red;">❌ Error processing file: ${error.message}</p>`;
+    resultDiv.innerHTML = `<p style="color: red;">❌ Error processing file: ${escapeHTML(error.message)}</p>`;
   }
 }
 
 // Process CSV and Excel files
 function processCSVFile(file) {
+  const importProfile = currentProfileName;
+  const importSelection = currentPet;
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
@@ -4240,7 +4054,8 @@ function processCSVFile(file) {
           const mapped = mapCSVRowsToIntolerances(results.data);
           if (mapped.length > 0) {
             // Get the currently selected profile
-            const currentProfile = currentPet || "Mocha";
+            const currentProfile = importProfile;
+        if (currentPet !== importSelection) { showUploadStatus("Profile changed. Choose the file again for the selected profile.", "warning"); return; }
             
             // Create unified intolerance object structure
             const intoleranceData = mapped;
@@ -4250,12 +4065,10 @@ function processCSVFile(file) {
             if (!profileData[currentProfile]) profileData[currentProfile] = {};
             profileData[currentProfile].intolerances = intoleranceData;
             
-            // Save to localStorage
-            saveAllProfiles();
-            
             // Update current intolerances for UI
             userIntolerances = intoleranceData;
             currentProfileName = currentProfile;
+            try { persistActiveProfile(); } catch (error) { reportProfileSaveFailure(); return; }
             
             // Refresh the UI
             loadCurrentIntolerances();
@@ -4287,6 +4100,8 @@ function processCSVFile(file) {
 
 // Process PDF files (5Strands reports)
 function processPDFFile(file) {
+  const importProfile = currentProfileName;
+  const importSelection = currentPet;
   const reader = new FileReader();
   reader.onload = function(e) {
     const typedarray = new Uint8Array(e.target.result);
@@ -4321,24 +4136,23 @@ function processPDFFile(file) {
 const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
         
         console.log("🔍 PDF Parsing Result - Raw intolerances array length:", intolerances.length);
-        console.log("🔍 PDF Parsing Result - Sample intolerances:", intolerances.slice(0, 10));
         
         if (intolerances.length > 0) {
           console.log("🔍 PDF Processing - Extracted Intolerances Count:", intolerances.length);
-          console.log("🔍 PDF Processing - Sample Intolerances:", intolerances.slice(0, 5));
           
           // Create unified intolerance object structure
           const intoleranceData = intolerances;
           
           // Update user intolerances directly
+          if (currentPet !== importSelection) { showUploadStatus("Profile changed. Choose the file again for the selected profile.", "warning"); return; }
           userIntolerances = intoleranceData;
-          currentProfileName = "My Profile";
+          currentProfileName = importProfile;
           
           // Update the simple user intolerance list for scanning
           userIntoleranceList = intolerances;
           
           // Save to localStorage
-          autoSaveIntolerances();
+          try { persistActiveProfile(); } catch (error) { reportProfileSaveFailure(); return; }
           
           console.log("🔍 PDF Processing - Updated userIntolerances:", userIntolerances.length);
           console.log("🔍 PDF Processing - Updated userIntoleranceList:", userIntoleranceList.length);
@@ -4373,6 +4187,8 @@ const intolerances = extractIntolerancesFrom5StrandsPDF(fullText);
 
 // Process DOCX files
 function processDocxFile(file) {
+  const importProfile = currentProfileName;
+  const importSelection = currentPet;
   const reader = new FileReader();
   const fileName = file.name.toLowerCase();
   
@@ -4386,14 +4202,15 @@ function processDocxFile(file) {
           
           if (intolerances.length > 0) {
             // Set profile name from filename
-            const profileName = file.name.replace(/\.docx$/i, '');
+            const profileName = importProfile;
+            if (currentPet !== importSelection) { showUploadStatus("Profile changed. Choose the file again for the selected profile.", "warning"); return; }
             currentProfileName = profileName;
             
             // Replace current intolerances
             userIntolerances = intolerances;
             
             // Save to localStorage and refresh the UI
-            autoSaveIntolerances();
+            try { persistActiveProfile(); } catch (error) { reportProfileSaveFailure(); return; }
             loadCurrentIntolerances();
             
             // Hide welcome message
@@ -4426,6 +4243,8 @@ function processDocxFile(file) {
 
 // Process TXT files
 function processTextFile(file) {
+  const importProfile = currentProfileName;
+  const importSelection = currentPet;
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
@@ -4436,7 +4255,8 @@ function processTextFile(file) {
       
       if (intolerances.length > 0) {
         // Get the currently selected profile
-        const currentProfile = currentPet || "Mocha";
+        const currentProfile = importProfile;
+        if (currentPet !== importSelection) { showUploadStatus("Profile changed. Choose the file again for the selected profile.", "warning"); return; }
         
         // Create unified intolerance object structure
         const intoleranceData = intolerances;
@@ -4446,12 +4266,10 @@ function processTextFile(file) {
         if (!profileData[currentProfile]) profileData[currentProfile] = {};
         profileData[currentProfile].intolerances = intoleranceData;
         
-        // Save to localStorage
-        saveAllProfiles();
-        
         // Update current intolerances for UI
         userIntolerances = intoleranceData;
         currentProfileName = currentProfile;
+        try { persistActiveProfile(); } catch (error) { reportProfileSaveFailure(); return; }
         
         // Refresh the UI
         loadCurrentIntolerances();
@@ -4635,8 +4453,8 @@ function showDebugInfo() {
   if (debugInfo) {
     let debugHTML = '<strong>Debug Information:</strong><br><br>';
     
-    debugHTML += `• Current Pet: ${currentPet}<br>`;
-    debugHTML += `• Current Profile Name: ${currentProfileName}<br>`;
+    debugHTML += `• Current Pet: ${escapeHTML(currentPet)}<br>`;
+    debugHTML += `• Current Profile Name: ${escapeHTML(currentProfileName)}<br>`;
     debugHTML += `• User Intolerances Count: ${userIntolerances.length}<br>`;
     debugHTML += `• All Profiles: ${Object.keys(intolerances).join(', ')}<br>`;
     debugHTML += `• localStorage Keys: ${safeStorage.getAppKeys().join(', ')}<br><br>`;
@@ -4662,11 +4480,11 @@ function showDebugInfo() {
         const value = safeStorage.getItem(key);
         debugHTML += `• ${key}: ${value ? value.substring(0, 100) + '...' : 'null'}<br>`;
       } catch (error) {
-        debugHTML += `• ${key}: Error reading - ${error.message}<br>`;
+        debugHTML += `• ${key}: Error reading - ${escapeHTML(error.message)}<br>`;
       }
     });
     
-    debugInfo.innerHTML = debugHTML;
+    debugInfo.textContent = debugHTML.replace(/<br>/g, "\n");
     debugInfo.style.display = 'block';
   }
 }
@@ -4720,7 +4538,7 @@ function loadProfileDataFromStorage() {
     if (stored) {
       const data = JSON.parse(stored);
       if (data && typeof data === 'object') {
-        profileData = data;
+        profileData = Object.assign(Object.create(null), data);
         console.log("✅ Loaded profileData from Profile Management System:", Object.keys(profileData));
       }
     } else {
@@ -4729,7 +4547,7 @@ function loadProfileDataFromStorage() {
       if (oldStored) {
         const data = JSON.parse(oldStored);
         if (data && typeof data === 'object') {
-          profileData = data;
+          profileData = Object.assign(Object.create(null), data);
           console.log("✅ Loaded profileData from safeStorage (legacy):", Object.keys(profileData));
         }
       }
