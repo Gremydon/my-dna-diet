@@ -13,14 +13,18 @@ class ResultReliabilityTests(unittest.TestCase):
 
     def camera(self, pg, data):
         pg.evaluate("""async data=>{
-          window.Tesseract={recognize:async()=>({data})};
+          window.Tesseract={recognize:async(image,language,options)=>{
+            if(language!=='eng'||typeof options?.logger!=='function')throw new Error('Incorrect OCR API arguments');
+            return {data};}};
           openScanModal();document.getElementById('canvas').width=1;
           await onProcessScanClick();
         }""", data)
 
     def upload(self, pg, data):
         pg.evaluate("""async data=>{
-          window.Tesseract={recognize:async()=>({data})};openScanModal();
+          window.Tesseract={recognize:async(image,language,options)=>{
+            if(language!=='eng'||typeof options?.logger!=='function')throw new Error('Incorrect OCR API arguments');
+            return {data};}};openScanModal();
           await processImage(new Blob(['synthetic image'],{type:'image/png'}));
         }""", data)
 

@@ -2574,7 +2574,7 @@ function processImage(imageBlob) {
   };
 
   // Catch synchronous library failures as well as rejected OCR promises.
-  return Promise.resolve().then(() => Tesseract.recognize(imageBlob, tesseractConfig))
+  return Promise.resolve().then(() => Tesseract.recognize(imageBlob, 'eng', tesseractConfig))
     .then(({ data }) => {
       const text = readableOcrText(data);
       if (currentPet !== scanProfile) throw new Error("Profile changed. Scan again for the selected profile.");

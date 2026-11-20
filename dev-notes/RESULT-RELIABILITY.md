@@ -35,7 +35,11 @@ continue to display as before.
 
 The successful uploaded-photo path also referenced a removed `ingredientInput`
 DOM field. That legacy write is now optional, allowing the existing upload
-analysis to complete without adding a new control.
+analysis to complete without adding a new control. Its OCR call now uses the
+Tesseract 2.1.1 API's `(image, language, options)` arguments; previously its options
+object occupied the language argument. Camera/upload regression stubs enforce the
+expected language and options positions. No OCR matching or normalization rule
+was changed.
 
 ## Confidence policy and limits
 
@@ -88,8 +92,8 @@ separate. No merge or deployment is authorized by this assignment.
 
 ## Recorded local verification (2026-11-20)
 
-- Full browser suite: **46 tests passed** in 77.781 seconds (17 new reliability
-  tests plus all 29 PR #1 regressions).
+- Full browser suite: **46 tests passed** (17 new reliability tests plus all 29
+  PR #1 regressions). The final rerun is recorded in the PR.
 - JavaScript syntax, Python test compilation, and `git diff --check`: passed.
 - Source comparison confirmed the four parsing/normalization/matching helpers
   listed above are identical to PR #1.
