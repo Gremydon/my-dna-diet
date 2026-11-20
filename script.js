@@ -743,6 +743,55 @@ function handleFileDrop(event) {
   }
 }
 
+// Assessment guards affect result eligibility, not ingredient parsing or matching.
+const MIN_OCR_CONFIDENCE = 50; // Tesseract's 0..100 score; not a food-safety probability.
+
+function hasAssessmentText(value) {
+  return typeof value === 'string' && /\p{L}/u.test(value.trim());
+}
+
+function assessmentIssue(ingredients, profileList = getActiveIntoleranceStringsForMatching()) {
+  if (typeof currentPet !== 'string' || !Object.hasOwn(intolerances, currentPet) ||
+      !Array.isArray(intolerances[currentPet]) || !intolerances[currentPet].every(hasAssessmentText) ||
+      !Array.isArray(profileList) || profileList.length === 0 || !profileList.every(hasAssessmentText)) {
+    return 'The selected profile has no valid intolerance data. Select a profile with data, or upload and review its intolerance list.';
+  }
+  if (!Array.isArray(ingredients) || ingredients.length === 0 || !ingredients.every(hasAssessmentText)) {
+    return 'No usable ingredient list could be read from this input.';
+  }
+  return null;
+}
+
+function renderUnableToAssess(container, reason, nextStep = 'Retake a clear photo of the ingredients, choose another image, or enter the ingredients manually.') {
+  if (!container) return;
+  const notice = document.createElement('div');
+  notice.setAttribute('role', 'status');
+  notice.style.cssText = 'background:#fff3cd;color:#664d03;padding:16px;border:2px solid #ffc107;border-radius:8px;margin:12px 0;';
+  const heading = document.createElement('h4');
+  heading.textContent = 'Unable to assess';
+  const explanation = document.createElement('p');
+  explanation.textContent = reason;
+  const action = document.createElement('p');
+  action.textContent = nextStep;
+  notice.append(heading, explanation, action);
+  container.replaceChildren(notice);
+}
+
+function showScanUnableToAssess(reason) {
+  const results = document.getElementById('scanResults');
+  renderUnableToAssess(results, reason);
+  if (results) appendScanResultsActions(results);
+  renderUnableToAssess(document.getElementById('scanStatus'), reason);
+}
+
+function readableOcrText(data) {
+  if (!data || typeof data.text !== 'string' || !hasAssessmentText(data.text) ||
+      !Number.isFinite(data.confidence) || data.confidence < MIN_OCR_CONFIDENCE || data.confidence > 100) {
+    throw new Error('The label could not be read reliably. Text recognition was empty or uncertain.');
+  }
+  return data.text;
+}
+
 // ===== SCAN PROCESSING FLOW =====
 let processingScan = false;
 
@@ -760,7 +809,11 @@ async function onProcessScanClick(evt) {
   modal?.classList.add("processing");
   show(spinner);
 
+  const results = document.getElementById('scanResults');
+  if (results) results.textContent = 'Processing label…';
   try {
+    const profileIssue = assessmentIssue(['pending']);
+    if (profileIssue) throw new Error(profileIssue);
     // 1) Get image: prefer canvas frame; fallback to file upload input
     let imageBitmapOrBlob = null;
     if (cameraCanvas && cameraCanvas.width > 0) {
@@ -776,8 +829,8 @@ async function onProcessScanClick(evt) {
     // 2) OCR
     const rawText = await ocrExtract(imageBitmapOrBlob);  // <-- your Tesseract.js wrapper
     if (currentPet !== scanProfile) throw new Error("Profile changed. Scan again for the selected profile.");
-    if (!rawText || !rawText.trim()) {
-      throw new Error("Couldn't read any text from the label. Try retake with better lighting/focus.");
+    if (typeof rawText !== 'string' || !hasAssessmentText(rawText)) {
+      throw new Error('No readable ingredient text was found.');
     }
 
     // 3) Normalize → ingredients
@@ -785,7 +838,8 @@ async function onProcessScanClick(evt) {
 
     // 4) Cross-check against the selected profile only
     const intolLower = getActiveIntoleranceStringsForMatching();
-    if (intolLower.length === 0) throw new Error("No intolerances loaded. Upload or select a profile with intolerance data first.");
+    const issue = assessmentIssue(ingredients, intolLower);
+    if (issue) throw new Error(issue);
 
     const matches = ingredients.filter(it => ingredientTokenMatchesIntolerances(it, intolLower));
 
@@ -801,8 +855,7 @@ async function onProcessScanClick(evt) {
     if (res) { res.classList.add("pulse"); setTimeout(()=>res.classList.remove("pulse"), 1500); }
 
   } catch (err) {
-    console.error(err);
-    toast(err.message || "Processing failed.");
+    showScanUnableToAssess(err.message || 'The label could not be processed.');
   } finally {
     hide(spinner);
     modal?.classList.remove("processing");
@@ -813,7 +866,7 @@ async function onProcessScanClick(evt) {
 // OCR extraction wrapper
 async function ocrExtract(imageData) {
   try {
-    const { data: { text } } = await Tesseract.recognize(imageData, 'eng', {
+    const { data } = await Tesseract.recognize(imageData, 'eng', {
       logger: m => {
         if (m.status === 'recognizing text') {
           const statusDiv = document.getElementById("scanStatus");
@@ -823,10 +876,9 @@ async function ocrExtract(imageData) {
         }
       }
     });
-    return text;
+    return readableOcrText(data);
   } catch (error) {
-    console.error("OCR Error:", error);
-    throw new Error("OCR processing failed: " + error.message);
+    throw new Error('The label could not be read reliably. Retake the photo with better lighting and focus, or enter ingredients manually.');
   }
 }
 
@@ -847,6 +899,8 @@ function parseIngredients(rawText) {
 function renderScanResults({ ingredients, matches, rawText }) {
   const resultsContainer = document.getElementById("scanResults");
   if (!resultsContainer) return;
+  const issue = assessmentIssue(ingredients);
+  if (issue) { showScanUnableToAssess(issue); return; }
 
   resultsContainer.innerHTML = "";
 
@@ -869,8 +923,8 @@ function renderScanResults({ ingredients, matches, rawText }) {
     const summaryDiv = document.createElement("div");
     summaryDiv.style.cssText = "background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #28a745;";
     summaryDiv.innerHTML = `
-      <div style="font-size: 16px; margin-bottom: 5px;">✅ No intolerances found</div>
-      <div style="font-size: 14px; font-weight: normal;">Scanned ${ingredients.length} ingredients</div>
+      <div style="font-size: 16px; margin-bottom: 5px;">No listed conflicts detected in the text analyzed</div>
+      <div style="font-size: 14px; font-weight: normal;">Scanned ${ingredients.length} ingredients. This does not confirm the food is safe; verify the package and your profile.</div>
     `;
     resultsContainer.appendChild(summaryDiv);
   }
@@ -2473,13 +2527,13 @@ function uploadImage(event) {
   if (file) {
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      showError("Please select an image file.");
+      showScanUnableToAssess("Please select an image file.");
       return;
     }
     
     // Validate file size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
-      showError("File too large. Please select an image under 10MB.");
+      showScanUnableToAssess("File too large. Please select an image under 10MB.");
       return;
     }
     
@@ -2497,10 +2551,13 @@ function uploadImage(event) {
 function processImage(imageBlob) {
   if (isProcessing) return;
   const scanProfile = currentPet;
-  
+  const profileIssue = assessmentIssue(['pending']);
+  if (profileIssue) { showScanUnableToAssess(profileIssue); return; }
   isProcessing = true;
-  showProcessingStatus();
+  const results = document.getElementById('scanResults');
+  if (results) results.textContent = 'Processing label…';
   hideError();
+  showProcessingStatus();
 
   // Configure Tesseract for better food label recognition
   const tesseractConfig = {
@@ -2516,8 +2573,10 @@ function processImage(imageBlob) {
     tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789,.-()[]{}:;%' // Common food label characters
   };
 
-  Tesseract.recognize(imageBlob, tesseractConfig)
-    .then(({ data: { text } }) => {
+  // Catch synchronous library failures as well as rejected OCR promises.
+  return Promise.resolve().then(() => Tesseract.recognize(imageBlob, tesseractConfig))
+    .then(({ data }) => {
+      const text = readableOcrText(data);
       if (currentPet !== scanProfile) throw new Error("Profile changed. Scan again for the selected profile.");
       
       if (!text || text.trim().length < 5) {
@@ -2531,16 +2590,14 @@ function processImage(imageBlob) {
         throw new Error("Text too short after cleaning. Please try a clearer photo.");
       }
       
-      document.getElementById("ingredientInput").value = cleanedText;
-      scanIngredients(cleanedText);
-      closeScanModal();
+      const legacyInput = document.getElementById('ingredientInput');
+      if (legacyInput) legacyInput.value = cleanedText;
+      if (scanIngredients(cleanedText) !== false) closeScanModal();
     })
     .catch((err) => {
-      console.error("OCR error:", err);
-      showError(err.message || "Could not read image. Please try again with a clearer photo.");
-      isProcessing = false;
-      hideProcessingStatus();
-    });
+      showScanUnableToAssess(err.message || 'The label could not be read reliably.');
+    })
+    .finally(() => { isProcessing = false; });
 }
 
 // Text Processing Utilities
@@ -2595,9 +2652,9 @@ function scanIngredients(text) {
   const resultsContainer = document.getElementById("scanResults");
   resultsContainer.innerHTML = "";
 
-  if (!text || text.trim().length === 0) {
-    resultsContainer.innerHTML = '<div style="color: #666; text-align: center; padding: 20px;">No ingredients found to scan</div>';
-    return;
+  if (typeof text !== 'string' || !text.trim()) {
+    showScanUnableToAssess('No readable ingredient text was found.');
+    return false;
   }
 
   // Improved ingredient parsing for OCR results (text is already lowercase)
@@ -2607,6 +2664,8 @@ function scanIngredients(text) {
     .filter(item => item.length > 2) // Remove very short items (likely OCR errors)
     .filter(item => /^[a-z\s]+$/.test(item)); // Only allow letters and spaces
   
+  const issue = assessmentIssue(inputList);
+  if (issue) { showScanUnableToAssess(issue); return false; }
   const petList = intolerances[currentPet].map(item => item.toLowerCase());
   const foundIntolerances = [];
   const otherIngredients = [];
@@ -2640,6 +2699,11 @@ function scanIngredients(text) {
     resultCount++;
   });
 
+  // The existing 50-result cap must never turn a partial scan into an all-clear.
+  if (inputList.length > maxResults && foundIntolerances.length === 0) {
+    showScanUnableToAssess('This scan exceeded the 50-ingredient processing limit; the full list was not assessed.');
+    return false;
+  }
   // Add summary with better layout
   if (foundIntolerances.length > 0) {
     const summaryDiv = document.createElement("div");
@@ -2653,8 +2717,8 @@ function scanIngredients(text) {
     const summaryDiv = document.createElement("div");
     summaryDiv.style.cssText = "background-color: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 15px 0; font-weight: bold; border-left: 4px solid #28a745;";
     summaryDiv.innerHTML = `
-      <div style="font-size: 16px; margin-bottom: 5px;">✅ No intolerances found</div>
-      <div style="font-size: 14px; font-weight: normal;">Scanned ${otherIngredients.length} ingredients</div>
+      <div style="font-size: 16px; margin-bottom: 5px;">No listed conflicts detected in the text analyzed</div>
+      <div style="font-size: 14px; font-weight: normal;">Scanned ${otherIngredients.length} ingredients. This does not confirm the food is safe; verify the package and your profile.</div>
     `;
     resultsContainer.insertBefore(summaryDiv, resultsContainer.firstChild);
   }
@@ -2690,7 +2754,7 @@ function testFood() {
   const resultDiv = document.getElementById("testFoodResults");
 
   if (!input.trim()) {
-    resultDiv.innerHTML = "<p>Please enter some ingredients first.</p>";
+    renderUnableToAssess(resultDiv, 'No ingredient text was entered.', 'Enter an ingredient list and check again.');
     return;
   }
 
@@ -2705,6 +2769,8 @@ function testFood() {
   // Normalize the intolerance list
   const lowerCaseIntolerances = intoleranceList.map(i => i.toLowerCase());
 
+  const issue = assessmentIssue(ingredients, lowerCaseIntolerances);
+  if (issue) { renderUnableToAssess(resultDiv, issue, 'Review the selected profile and enter a readable ingredient list, then try again.'); return; }
   const flagged = ingredients.filter(ingredient =>
     lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
   );
@@ -2715,7 +2781,7 @@ function testFood() {
       <ul>${flagged.map(i => `<li style="color: red;">${escapeHTML(i)}</li>`).join("")}</ul>
     `;
   } else {
-    resultDiv.innerHTML = `<p style="color: green;">✅ No known intolerances found for <strong>${escapeHTML(currentPet)}</strong>.</p>`;
+    resultDiv.innerHTML = `<p style="color: green;">No listed conflicts detected for <strong>${escapeHTML(currentPet)}</strong> in the text analyzed. This does not confirm the food is safe.</p>`;
   }
 }
 
@@ -2732,6 +2798,8 @@ function viewDiet() {
   // Lock in the selected profile and its intolerance list
   const currentProfile = currentPet;
   const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
+  const issue = assessmentIssue(['pending'], lowerCaseIntolerances);
+  if (issue) { renderUnableToAssess(resultDiv, issue, 'Select a profile with intolerance data, then choose the document again.'); return; }
 
   // Show processing status
   resultDiv.innerHTML = `<p>🔄 Processing ${escapeHTML(file.name)}... This may take a few seconds.</p>`;
@@ -3701,9 +3769,10 @@ function processDietTextFile(file, currentProfile, lowerCaseIntolerances, result
       const ingredients = contents.split(/[\n,]+/).map(line => line.trim()).filter(Boolean);
       analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntolerances, resultDiv);
     } catch (error) {
-      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading text file: ${escapeHTML(error.message)}</p>`;
+      renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
     }
   };
+  reader.onerror = () => { if (currentPet === currentProfile) renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.'); };
   reader.readAsText(file);
 }
 
@@ -3735,7 +3804,7 @@ function processDietJsonFile(file, currentProfile, lowerCaseIntolerances, result
       }
       
       if (ingredients.length === 0) {
-        resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in JSON file. Please check the file format.</p>`;
+        renderUnableToAssess(resultDiv, 'No usable ingredients were found in this document.', 'Choose a readable ingredient list or enter ingredients manually.');
         return;
       }
       
@@ -3743,9 +3812,10 @@ function processDietJsonFile(file, currentProfile, lowerCaseIntolerances, result
       const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
       analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
     } catch (error) {
-      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading JSON file: ${escapeHTML(error.message)}</p>`;
+      renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
     }
   };
+  reader.onerror = () => { if (currentPet === currentProfile) renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.'); };
   reader.readAsText(file);
 }
 
@@ -3757,7 +3827,7 @@ function processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultD
       Papa.parse(content, {
         complete: function(results) {
           if (results.errors.length > 0) {
-            resultDiv.innerHTML = `<p style="color: red;">❌ Error parsing CSV: ${escapeHTML(results.errors[0].message)}</p>`;
+            renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
             return;
           }
           
@@ -3766,21 +3836,22 @@ function processDietCsvFile(file, currentProfile, lowerCaseIntolerances, resultD
             const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
             analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
           } else {
-            resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in CSV file.</p>`;
+            renderUnableToAssess(resultDiv, 'No usable ingredients were found in this document.', 'Choose a readable ingredient list or enter ingredients manually.');
           }
         }
       });
     } catch (error) {
-      resultDiv.innerHTML = `<p style="color: red;">❌ Error reading CSV file: ${escapeHTML(error.message)}</p>`;
+      renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
     }
   };
+  reader.onerror = () => { if (currentPet === currentProfile) renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.'); };
   reader.readAsText(file);
 }
 
 function processDietDocxFile(file, currentProfile, lowerCaseIntolerances, resultDiv) {
   const reader = new FileReader();
   reader.onload = function (e) {
-    mammoth.extractRawText({arrayBuffer: e.target.result})
+    Promise.resolve().then(() => mammoth.extractRawText({arrayBuffer: e.target.result}))
       .then(function(result) {
         try {
           const text = result.value;
@@ -3790,16 +3861,17 @@ function processDietDocxFile(file, currentProfile, lowerCaseIntolerances, result
             const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
             analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
           } else {
-            resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in DOCX file.</p>`;
+            renderUnableToAssess(resultDiv, 'No usable ingredients were found in this document.', 'Choose a readable ingredient list or enter ingredients manually.');
           }
         } catch (error) {
-          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing DOCX content: ${escapeHTML(error.message)}</p>`;
+          renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
         }
       })
       .catch(function(error) {
-        resultDiv.innerHTML = `<p style="color: red;">❌ Error reading DOCX file: ${escapeHTML(error.message)}</p>`;
+        renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
       });
   };
+  reader.onerror = () => { if (currentPet === currentProfile) renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.'); };
   reader.readAsArrayBuffer(file);
 }
 
@@ -3808,7 +3880,7 @@ function processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultD
   reader.onload = function (e) {
     const typedarray = new Uint8Array(e.target.result);
     
-    pdfjsLib.getDocument(typedarray).promise.then(function(pdf) {
+    Promise.resolve().then(() => pdfjsLib.getDocument(typedarray).promise).then(function(pdf) {
       let fullText = '';
       const promises = [];
       
@@ -3835,24 +3907,27 @@ function processDietPdfFile(file, currentProfile, lowerCaseIntolerances, resultD
             const lowerCaseIngredients = ingredients.map(item => item.toLowerCase());
             analyzeDietIngredients(lowerCaseIngredients, currentProfile, lowerCaseIntolerances, resultDiv);
           } else {
-            resultDiv.innerHTML = `<p style="color: orange;">⚠️ No ingredients found in PDF file.</p>`;
+            renderUnableToAssess(resultDiv, 'No usable ingredients were found in this document.', 'Choose a readable ingredient list or enter ingredients manually.');
           }
         } catch (error) {
-          resultDiv.innerHTML = `<p style="color: red;">❌ Error processing PDF content: ${escapeHTML(error.message)}</p>`;
+          renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
         }
       }).catch(function(error) {
-        handleFileUploadError(error, file.name);
+        if (currentPet === currentProfile) renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
       });
     }).catch(function(error) {
-      handleFileUploadError(error, file.name);
+      if (currentPet === currentProfile) renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.');
     });
   };
+  reader.onerror = () => { if (currentPet === currentProfile) renderUnableToAssess(resultDiv, 'The ingredient document could not be read.', 'Choose another document or enter ingredients manually.'); };
   reader.readAsArrayBuffer(file);
 }
 
 // Common function to analyze diet ingredients
 function analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntolerances, resultDiv) {
   if (currentPet !== currentProfile) return;
+  const issue = assessmentIssue(ingredients, lowerCaseIntolerances);
+  if (issue) { renderUnableToAssess(resultDiv, issue, 'Review the selected profile and enter a readable ingredient list, then try again.'); return; }
   const flagged = ingredients.filter(ingredient =>
     lowerCaseIntolerances.some(intolerantItem => ingredient.includes(intolerantItem))
   );
@@ -3883,10 +3958,10 @@ function analyzeDietIngredients(ingredients, currentProfile, lowerCaseIntoleranc
         <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Diet Plan Analysis Complete</h4>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${escapeHTML(currentProfile)}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Total Ingredients Analyzed:</strong> ${ingredients.length}</p>
-        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Issues Found:</strong> None! 🎉</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Result:</strong> No listed conflicts detected in the text analyzed.</p>
         
         <p style="margin: 10px 0 0 0; color: #155724; font-size: 14px;">
-          💡 <strong>Great news!</strong> This diet plan appears to be safe for your current intolerance profile.
+          This does not confirm the food is safe. Verify the package ingredients and the selected profile.
         </p>
       </div>
     `;
@@ -3932,7 +4007,7 @@ function testFoodIngredients() {
   const resultDiv = document.getElementById("testIngredientResults");
 
   if (!input) {
-    resultDiv.innerHTML = "<p style='color: #dc3545; text-align: center; padding: 10px; background-color: #f8d7da; border-radius: 6px;'>Please enter some ingredients first.</p>";
+    renderUnableToAssess(resultDiv, 'No ingredient text was entered.', 'Enter an ingredient list and check again.');
     return;
   }
 
@@ -3945,6 +4020,8 @@ function testFoodIngredients() {
   const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
   const activeLabel = currentProfileName || currentPet || 'Profile';
 
+  const issue = assessmentIssue(ingredients, lowerCaseIntolerances);
+  if (issue) { renderUnableToAssess(resultDiv, issue, 'Review the selected profile and enter a readable ingredient list, then try again.'); return; }
   const flagged = ingredients.filter(ingredient =>
     ingredientTokenMatchesIntolerances(ingredient, lowerCaseIntolerances)
   );
@@ -3975,10 +4052,10 @@ function testFoodIngredients() {
         <h4 style="margin: 0 0 10px 0; color: #155724;">✅ Analysis Complete</h4>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Profile:</strong> ${escapeHTML(activeLabel)}</p>
         <p style="margin: 0 0 15px 0; color: #155724;"><strong>Ingredients Analyzed:</strong> ${ingredients.length}</p>
-        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Issues Found:</strong> None! 🎉</p>
+        <p style="margin: 0 0 15px 0; color: #155724;"><strong>Result:</strong> No listed conflicts detected in the text analyzed.</p>
         
         <p style="margin: 10px 0 0 0; color: #155724; font-size: 14px;">
-          💡 <strong>Great news!</strong> These ingredients appear to be safe for your current intolerance profile.
+          This does not confirm the food is safe. Verify the package ingredients and the selected profile.
         </p>
       </div>
     `;
@@ -4005,6 +4082,8 @@ function analyzeDietPlan() {
   // Lock in the selected profile and its intolerance list
   const currentProfile = currentPet;
   const lowerCaseIntolerances = getActiveIntoleranceStringsForMatching();
+  const issue = assessmentIssue(['pending'], lowerCaseIntolerances);
+  if (issue) { renderUnableToAssess(resultDiv, issue, 'Select a profile with intolerance data, then choose the document again.'); return; }
 
   // Show processing status
   resultDiv.innerHTML = `<p style='text-align: center; padding: 10px; background-color: #e3f2fd; border-radius: 6px; color: #1976d2;'>🔄 Processing ${escapeHTML(file.name)}... This may take a few seconds.</p>`;
